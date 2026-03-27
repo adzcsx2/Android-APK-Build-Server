@@ -1,0 +1,49 @@
+{
+  "server": {
+    "port": 3000,
+    "host": "0.0.0.0",
+    "basePath": "/build"
+  },
+  "workplace": {
+    "path": "D:\\AndroidWorkplace"
+  },
+  "androidSdk": "C:\\Users\\36988\\AppData\\Local\\Android\\Sdk",
+  "pythonPath": "C:\\Python314",
+  "jdk": {
+    "jdk8": null,
+    "jdk11": "C:\\Users\\36988\\.jdks\\corretto-11.0.30",
+    "jdk17": "C:\\Users\\36988\\.jdks\\ms-17.0.18",
+    "jdk21": "D:\\Program Files\\Android\\Android Studio\\jbr"
+  },
+  "apk": {
+    "outputDir": "D:\\WebWorkplace\\apk",
+    "retentionDays": 3,
+    "cleanupTime": "02:00"
+  },
+  "build": {
+    "maxConcurrent": 3,
+    "timeout": 1800000
+  },
+  "initPassword": "1231231",
+  "projectJdk": {
+    "ai-camera-meta": 17,
+    "Appclockwidget_Old": 17,
+    "Appfindmyvertu_Old": 17,
+    "Appmyvertu3.0_Old": 17,
+    "appstore-android": 17,
+    "Apptheme_Old": 17,
+    "appvertudidcenter": 17,
+    "floatingai": 17,
+    "log-reporting": 17,
+    "magicbox": 17,
+    "metaself": 17,
+    "value-android": 17,
+    "vbox-android": 17,
+    "vemory-flutter": 17,
+    "Vertulogo4Royole_Old": 17,
+    "VertuShiPin_Old": 17,
+    "vpush": 17,
+    "vshot-android": 17,
+    "vtalkandroid": 11
+  }
+}

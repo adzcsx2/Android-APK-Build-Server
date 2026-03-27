@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Workplace 配置</title>
+  <link rel="stylesheet" href="/init/css/style.css">
+</head>
+<body>
+  <!-- Password Overlay -->
+  <div id="password-overlay" class="password-overlay">
+    <div class="password-card">
+      <h2>请输入密码</h2>
+      <div class="form-group">
+        <input type="password" id="password-input" placeholder="密码" autocomplete="off">
+      </div>
+      <div id="password-error" class="status-message hidden"></div>
+      <button id="password-btn" class="btn btn-primary">确认</button>
+    </div>
+  </div>
+
+  <!-- Main Content (hidden until password verified) -->
+  <div id="main-content" class="container hidden">
+    <header>
+      <h1>Workplace 配置</h1>
+      <a href="/build/" class="nav-link">返回构建页面</a>
+    </header>
+
+    <main>
+      <!-- Scan Section -->
+      <section class="step">
+        <h2>扫描项目目录</h2>
+        <div class="scan-form">
+          <div class="form-group">
+            <label>目录路径</label>
+            <input type="text" id="scan-path" placeholder="例如: D:\AndroidWorkplace">
+          </div>
+          <div class="scan-actions">
+            <button id="scan-btn" class="btn btn-primary">扫描</button>
+            <button id="add-path-btn" class="btn btn-success" disabled>添加到列表</button>
+          </div>
+        </div>
+        <div id="scan-status" class="status-message hidden"></div>
+
+        <!-- Preview Section -->
+        <div id="preview-section" class="preview-section hidden">
+          <h3>找到的项目</h3>
+          <div id="project-preview" class="project-preview"></div>
+        </div>
+      </section>
+
+      <!-- Configured Paths -->
+      <section class="step">
+        <h2>已配置的工作目录</h2>
+        <div id="path-list" class="path-list">
+          <div class="loading">加载中...</div>
+        </div>
+        <div id="save-status" class="status-message hidden"></div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/init/js/init.js"></script>
+</body>
+</html>

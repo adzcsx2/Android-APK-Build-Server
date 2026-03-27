@@ -1,0 +1,7 @@
+node_modules/
+apk/
+server.log
+data/build-history.json
+data/project-branches.json
+data/project-configs.json
+data/workplace-configs.json

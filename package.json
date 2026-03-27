@@ -1,0 +1,15 @@
+{
+  "name": "android-build-server",
+  "version": "1.0.0",
+  "description": "Android APK Online Build Platform",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "stop": "taskkill /F /IM node.exe 2>nul || echo No node process found"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "uuid": "^9.0.0"
+  }
+}

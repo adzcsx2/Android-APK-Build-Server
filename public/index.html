@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Android APK Build Server</title>
+  <link rel="stylesheet" href="/build/css/style.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Android APK Build Server</h1>
+      <a href="/init/" class="nav-link">Configure Workplaces</a>
+    </header>
+
+    <main>
+      <!-- Step 1: Select Project -->
+      <section class="step" id="step-project">
+        <h2>1. 选择项目</h2>
+        <div class="project-list" id="project-list">
+          <div class="loading">加载中...</div>
+        </div>
+      </section>
+
+      <!-- Step 2: Select Branch -->
+      <section class="step hidden" id="step-branch">
+        <h2>2. 选择分支</h2>
+        <div class="form-group">
+          <select id="branch-select">
+            <option value="">请选择分支</option>
+          </select>
+          <button id="fetch-branches-btn" class="btn btn-secondary">获取所有分支</button>
+        </div>
+        <div class="branch-log hidden" id="branch-log">
+          <div class="branch-log-title">最近提交记录</div>
+          <div class="branch-log-list" id="branch-log-list"></div>
+        </div>
+      </section>
+
+      <!-- Step 3: Select Module -->
+      <section class="step hidden" id="step-module">
+        <h2>3. 选择模块</h2>
+        <div class="form-group">
+          <select id="module-select">
+            <option value="">请选择模块</option>
+          </select>
+        </div>
+      </section>
+
+      <!-- Step 4: Select Variant & Version -->
+      <section class="step hidden" id="step-config">
+        <h2>4. 配置版本</h2>
+        <div class="form-row">
+          <div class="form-group">
+            <label>变体 (Variant)</label>
+            <select id="variant-select"></select>
+          </div>
+          <div class="form-group">
+            <label>JDK 版本</label>
+            <select id="jdk-version-select">
+              <option value="">使用默认</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Version Code</label>
+            <input type="number" id="version-code" min="1">
+          </div>
+          <div class="form-group">
+            <label>Version Name</label>
+            <input type="text" id="version-name">
+          </div>
+        </div>
+        <div class="form-row form-row-checkbox">
+          <label class="toggle-label">
+            <span class="toggle-switch">
+              <input type="checkbox" id="use-cache-checkbox" checked>
+              <span class="toggle-slider"></span>
+            </span>
+            <span class="toggle-text">使用缓存构建</span>
+          </label>
+        </div>
+        <button id="build-btn" class="btn btn-success">开始构建</button>
+      </section>
+
+      <!-- Step 5: Build Progress -->
+      <section class="step hidden" id="step-build">
+        <div class="section-header">
+          <h2>5. 构建进度</h2>
+          <div class="section-actions">
+            <button id="refresh-logs-btn" class="btn btn-secondary">刷新日志</button>
+            <button id="clear-logs-btn" class="btn btn-danger">清空日志</button>
+          </div>
+        </div>
+        <div class="build-status" id="build-status">
+          <span class="status-text">准备中...</span>
+        </div>
+        <div class="log-info" id="log-info"></div>
+        <div class="log-container">
+          <pre id="build-log">选择项目后加载日志</pre>
+        </div>
+      </section>
+
+      <!-- APK Build History List -->
+      <section class="step hidden" id="step-apk-list">
+        <h2>APK 构建列表</h2>
+        <div id="apk-list" class="apk-list"></div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/build/js/app.js?v=14"></script>
+</body>
+</html>
