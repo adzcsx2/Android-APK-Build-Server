@@ -67,17 +67,20 @@ function saveWorkplacePaths(paths) {
 }
 
 /**
- * Check if directory is an Android project (exclude Flutter)
+ * Check if directory is a Flutter project
+ */
+function isFlutterProject(dirPath) {
+  return fs.existsSync(path.join(dirPath, 'pubspec.yaml'));
+}
+
+/**
+ * Check if directory is an Android project (including Flutter projects)
  */
 function isAndroidProject(dirPath) {
   const settingsGradle = path.join(dirPath, 'settings.gradle');
   const settingsGradleKts = path.join(dirPath, 'settings.gradle.kts');
-  const pubspecYaml = path.join(dirPath, 'pubspec.yaml');
 
-  const hasSettings = fs.existsSync(settingsGradle) || fs.existsSync(settingsGradleKts);
-  const isFlutter = fs.existsSync(pubspecYaml);
-
-  return hasSettings && !isFlutter;
+  return fs.existsSync(settingsGradle) || fs.existsSync(settingsGradleKts);
 }
 
 /**
@@ -97,11 +100,12 @@ function scanPath(dirPath) {
 
     const projectPath = path.join(dirPath, entry.name);
 
-    if (isAndroidProject(projectPath)) {
+    const isFlutter = isFlutterProject(projectPath);
+    if (isAndroidProject(projectPath) || isFlutter) {
       projects.push({
         name: entry.name,
         path: projectPath,
-        type: 'android',
+        type: isFlutter ? 'flutter' : 'android',
         workplacePath: dirPath
       });
     }
@@ -145,6 +149,7 @@ module.exports = {
   getWorkplacePaths,
   saveWorkplacePaths,
   isAndroidProject,
+  isFlutterProject,
   scanPath,
   getAllProjects,
   getProjectByName,

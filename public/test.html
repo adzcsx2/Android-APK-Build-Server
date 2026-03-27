@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Project Memory Tests</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 1200px;
+      margin: 20px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    h1 {
+      color: #333;
+      border-bottom: 2px solid #667eea;
+      padding-bottom: 10px;
+    }
+    .test-result {
+      background: white;
+      padding: 15px;
+      margin: 10px 0;
+      border-radius: 6px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .pass {
+      border-left: 4px solid #28a745;
+    }
+    .fail {
+      border-left: 4px solid #dc3545;
+    }
+    .pass .status {
+      color: #28a745;
+      font-weight: bold;
+    }
+    .fail .status {
+      color: #dc3545;
+      font-weight: bold;
+    }
+    .summary {
+      background: white;
+      padding: 20px;
+      margin: 20px 0;
+      border-radius: 6px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .summary.all-passed {
+      border-left: 4px solid #28a745;
+    }
+    .summary.has-failures {
+      border-left: 4px solid #dc3545;
+    }
+    #test-output {
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 14px;
+    }
+    .run-button {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      font-size: 16px;
+      cursor: pointer;
+      margin: 10px 0;
+    }
+    .run-button:hover {
+      background: #5a6fd6;
+    }
+    .run-button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+  </style>
+</head>
+<body>
+  <h1>Project Memory Configuration Tests</h1>
+
+  <button class="run-button" id="run-tests">Run Tests</button>
+
+  <div class="summary" id="summary" style="display:none;">
+    <h2>Test Summary</h2>
+    <div id="summary-content"></div>
+  </div>
+
+  <div id="test-output"></div>
+
+  <!-- Load the actual app code -->
+  <script src="/build/js/app.js"></script>
+
+  <script>
+    // Simple test framework
+    class TestRunner {
+      constructor() {
+        this.tests = [];
+        this.results = [];
+        this.passed = 0;
+        this.failed = 0;
+      }
+
+      test(name, fn) {
+        this.tests.push({ name, fn });
+      }
+
+      async runAll() {
+        this.results = [];
+        this.passed = 0;
+        this.failed = 0;
+
+        for (const test of this.tests) {
+          try {
+            localStorage.clear(); // Reset before each test
+            await test.fn();
+            this.passed++;
+            this.results.push({ name: test.name, passed: true });
+          } catch (error) {
+            this.failed++;
+            this.results.push({
+              name: test.name,
+              passed: false,
+              error: error.message
+            });
+          }
+        }
+
+        return this.results;
+      }
+
+      renderResults() {
+        const output = document.getElementById('test-output');
+        output.innerHTML = this.results.map(result => `
+          <div class="test-result ${result.passed ? 'pass' : 'fail'}">
+            <span class="status">${result.passed ? '✓ PASS' : '✗ FAIL'}</span>
+            <strong>${result.name}</strong>
+            ${result.error ? `<br><small style="color: #666;">Error: ${result.error}</small>` : ''}
+          </div>
+        `).join('');
+
+        const summary = document.getElementById('summary');
+        const summaryContent = document.getElementById('summary-content');
+
+        summary.className = `summary ${this.failed === 0 ? 'all-passed' : 'has-failures'}`;
+        summary.style.display = 'block';
+
+        summaryContent.innerHTML = `
+          <p><strong>Total:</strong> ${this.tests.length} tests</p>
+          <p style="color: #28a745;"><strong>Passed:</strong> ${this.passed}</p>
+          ${this.failed > 0 ? `<p style="color: #dc3545;"><strong>Failed:</strong> ${this.failed}</p>` : ''}
+          <p><strong>Success Rate:</strong> ${((this.passed / this.tests.length) * 100).toFixed(1)}%</p>
+        `;
+      }
+    }
+
+    const runner = new TestRunner();
+
+    // Assert helpers
+    function assertEqual(actual, expected, message = '') {
+      if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+        throw new Error(`${message}\nExpected: ${JSON.stringify(expected)}\nActual: ${JSON.stringify(actual)}`);
+      }
+    }
+
+    function assertNull(actual, message = '') {
+      if (actual !== null) {
+        throw new Error(`${message}\nExpected: null\nActual: ${actual}`);
+      }
+    }
+
+    function assertNotNull(actual, message = '') {
+      if (actual === null) {
+        throw new Error(`${message}\nExpected: not null\nActual: null`);
+      }
+    }
+
+    function assertContains(text, substring, message = '') {
+      if (!text.includes(substring)) {
+        throw new Error(`${message}\nExpected to contain: "${substring}"\nIn: "${text}"`);
+      }
+    }
+
+    // Mock helper
+    function mockFetch(data) {
+      const originalFetch = window.fetch;
+      window.fetch = () => Promise.resolve({
+        json: () => Promise.resolve(data)
+      });
+      return () => { window.fetch = originalFetch; };
+    }
+
+    // ========== TESTS ==========
+
+    // Test 1: loadProjectMemory returns null for non-existent config
+    runner.test('loadProjectMemory returns null for non-existent config', () => {
+      localStorage.clear();
+      const config = loadProjectMemory('non-existent-project');
+      assertNull(config, 'Should return null for non-existent config');
+    });
+
+    // Test 2: loadProjectMemory loads saved config
+    runner.test('loadProjectMemory loads saved config', () => {
+      localStorage.clear();
+      const testConfig = {
+        branch: 'master',
+        moduleName: 'app',
+        variant: 'debug'
+      };
+      localStorage.setItem('build_config_test-project', JSON.stringify(testConfig));
+
+      const loaded = loadProjectMemory('test-project');
+      assertEqual(loaded, testConfig, 'Should load saved config');
+    });
+
+    // Test 3: saveProjectMemory saves config
+    runner.test('saveProjectMemory saves config to localStorage', () => {
+      localStorage.clear();
+      const testConfig = {
+        branch: 'develop',
+        moduleName: 'app'
+      };
+
+      saveProjectMemory('test-project', testConfig);
+
+      const saved = JSON.parse(localStorage.getItem('build_config_test-project'));
+      assertEqual(saved, testConfig, 'Should save config to localStorage');
+    });
+
+    // Test 4: saveProjectMemory handles errors gracefully
+    runner.test('saveProjectMemory handles localStorage errors', () => {
+      const originalSetItem = localStorage.setItem;
+      localStorage.setItem = () => {
+        throw new Error('QuotaExceededError');
+      };
+
+      try {
+        saveProjectMemory('test-project', { branch: 'master' });
+        // Should not throw - test passes
+      } finally {
+        localStorage.setItem = originalSetItem;
+      }
+    });
+
+    // Test 5: loadProjectMemory handles invalid JSON
+    runner.test('loadProjectMemory handles invalid JSON', () => {
+      localStorage.clear();
+      localStorage.setItem('build_config_test-project', 'invalid-json');
+
+      const config = loadProjectMemory('test-project');
+      assertNull(config, 'Should return null for invalid JSON');
+    });
+
+    // Test 6: renderModules restores saved module
+    runner.test('renderModules restores saved module', () => {
+      const savedConfig = { moduleName: 'feature-module' };
+      const modules = ['app', 'feature-module', 'library'];
+
+      renderModules(modules, savedConfig);
+
+      const selectedValue = document.getElementById('module-select').value;
+      assertEqual(selectedValue, 'feature-module', 'Should select saved module');
+    });
+
+    // Test 7: renderModules falls back to first module if saved not found
+    runner.test('renderModules falls back to first module', () => {
+      const savedConfig = { moduleName: 'non-existent' };
+      const modules = ['app', 'library'];
+
+      renderModules(modules, savedConfig);
+
+      const selectedValue = document.getElementById('module-select').value;
+      assertEqual(selectedValue, 'app', 'Should fall back to first module');
+    });
+
+    // Test 8: renderVariants restores saved variant
+    runner.test('renderVariants restores saved variant', () => {
+      const savedConfig = { variant: 'release' };
+      const variants = ['debug', 'release', 'staging'];
+
+      renderVariants(variants, savedConfig);
+
+      const selectedValue = document.getElementById('variant-select').value;
+      assertEqual(selectedValue, 'release', 'Should select saved variant');
+    });
+
+    // Test 9: renderVariants falls back to first variant
+    runner.test('renderVariants falls back to first variant', () => {
+      const savedConfig = { variant: 'non-existent' };
+      const variants = ['debug', 'release'];
+
+      renderVariants(variants, savedConfig);
+
+      const selectedValue = document.getElementById('variant-select').value;
+      assertEqual(selectedValue, 'debug', 'Should fall back to first variant');
+    });
+
+    // Test 10: selectProject loads saved config into state
+    runner.test('selectProject loads saved config into state', async () => {
+      localStorage.clear();
+      const savedConfig = {
+        branch: 'develop',
+        moduleName: 'app'
+      };
+      localStorage.setItem('build_config_test-project', JSON.stringify(savedConfig));
+
+      await selectProject('test-project');
+
+      assertNotNull(state.savedConfig, 'savedConfig should not be null');
+      assertEqual(state.savedConfig.branch, 'develop', 'Should load saved branch');
+    });
+
+    // Test 11: selectProject does not auto-fetch branches
+    runner.test('selectProject does not auto-fetch branches', async () => {
+      let fetchCalled = false;
+      const originalFetch = window.fetch;
+      window.fetch = () => {
+        fetchCalled = true;
+        return Promise.resolve({ json: () => Promise.resolve({}) });
+      };
+
+      await selectProject('test-project');
+
+      window.fetch = originalFetch;
+
+      if (fetchCalled) {
+        throw new Error('selectProject should not call fetch (no auto-fetch)');
+      }
+    });
+
+    // Test 12: selectProject clears branch select
+    runner.test('selectProject clears branch select', async () => {
+      await selectProject('test-project');
+
+      const branchSelect = document.getElementById('branch-select');
+      assertContains(branchSelect.innerHTML, '请先获取分支', 'Should show placeholder');
+    });
+
+    // ========== RUN TESTS ==========
+
+    document.getElementById('run-tests').addEventListener('click', async function() {
+      const button = this;
+      button.disabled = true;
+      button.textContent = 'Running...';
+
+      await runner.runAll();
+      runner.renderResults();
+
+      button.disabled = false;
+      button.textContent = 'Run Tests';
+    });
+
+    console.log('Test suite loaded. Click "Run Tests" to execute.');
+  </script>
+</body>
+</html>
