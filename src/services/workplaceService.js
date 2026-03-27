@@ -4,6 +4,13 @@ const path = require('path');
 const CONFIG_FILE = path.join(__dirname, '../../data/workplace-configs.json');
 const ROOT_CONFIG = path.join(__dirname, '../../config.json');
 
+// In-memory cache for project list to avoid repeated filesystem scans
+const PROJECT_CACHE = {
+  data: null,
+  timestamp: 0,
+  ttl: 5000 // 5 seconds
+};
+
 /**
  * Ensure data directory and config file exist.
  * Auto-migrate from config.json workplace.path on first run.
@@ -42,9 +49,11 @@ function getWorkplacePaths() {
 }
 
 /**
- * Save workplace paths to disk
+ * Save workplace paths to disk and invalidate project cache
  */
 function saveWorkplacePaths(paths) {
+  PROJECT_CACHE.data = null;
+  PROJECT_CACHE.timestamp = 0;
   const data = {
     version: 1,
     lastUpdated: new Date().toISOString(),
@@ -102,9 +111,14 @@ function scanPath(dirPath) {
 }
 
 /**
- * Get all Android projects from all configured paths
+ * Get all Android projects from all configured paths (with cache)
  */
 function getAllProjects() {
+  const now = Date.now();
+  if (PROJECT_CACHE.data && (now - PROJECT_CACHE.timestamp) < PROJECT_CACHE.ttl) {
+    return PROJECT_CACHE.data;
+  }
+
   ensureConfigFileExists();
   const paths = getWorkplacePaths();
   let allProjects = [];
@@ -114,6 +128,8 @@ function getAllProjects() {
     allProjects = allProjects.concat(projects);
   }
 
+  PROJECT_CACHE.data = allProjects;
+  PROJECT_CACHE.timestamp = now;
   return allProjects;
 }
 

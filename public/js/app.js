@@ -444,13 +444,9 @@ async function selectProject(name) {
   state.variant = null;
   state.jdkVersion = null;
   state.buildId = null;
-  state.recentBuilds = [];
 
   // Clear branch log when switching projects
   renderBranchLog([]);
-
-  // Load saved configuration from server
-  state.savedConfig = await loadProjectConfig(name);
 
   // Show branch step, hide downstream steps
   elements.steps.branch.classList.remove('hidden');
@@ -473,15 +469,30 @@ async function selectProject(name) {
   elements.buildStatus.querySelector('.status-text').textContent = '准备中...';
   loadBuildLog(name);
 
-  // Check for active/recent builds for this project
-  await loadActiveBuilds();
+  // Fire-and-forget tasks
+  document.getElementById('step-apk-list').classList.remove('hidden');
+  loadApks();
+
+  // Parallel: load config, active builds, and cached branches
+  const [savedConfig, , cachedData] = await Promise.all([
+    loadProjectConfig(name),
+    loadActiveBuilds(),
+    (async () => {
+      try {
+        elements.branchSelect.innerHTML = '<option value="">加载中...</option>';
+        const cachedRes = await fetch(`${API_BASE}/projects/${name}/branches/cached`);
+        return await cachedRes.json();
+      } catch (error) {
+        console.error('Failed to load cached branches:', error);
+        return null;
+      }
+    })()
+  ]);
+
+  state.savedConfig = savedConfig;
 
   // Update build button based on whether this project has an active build
   updateBuildButtonState();
-
-  // Show APK build list for this project
-  document.getElementById('step-apk-list').classList.remove('hidden');
-  loadApks();
 
   // If there's an active or pending build for this project, reconnect SSE
   const activeForProject = state.activeBuilds.find(b => b.projectName === name);
@@ -498,38 +509,30 @@ async function selectProject(name) {
     connectBuildLogs(activeForProject.id);
   }
 
-  // Try to load cached branches for this project
-  try {
-    elements.branchSelect.innerHTML = '<option value="">加载中...</option>';
-    const cachedRes = await fetch(`${API_BASE}/projects/${name}/branches/cached`);
-    const cachedData = await cachedRes.json();
+  // Process cached branches result (from parallel fetch above)
+  if (cachedData && cachedData.success && cachedData.cached && cachedData.branches.length > 0) {
+    // Populate branch dropdown from cache
+    renderBranches(cachedData.branches, cachedData.currentBranch);
 
-    if (cachedData.success && cachedData.cached && cachedData.branches.length > 0) {
-      // Populate branch dropdown from cache
-      renderBranches(cachedData.branches, cachedData.currentBranch);
+    // Auto-select the saved branch if it exists in the cached list
+    if (state.savedConfig && state.savedConfig.branch) {
+      const savedBranch = state.savedConfig.branch;
+      const optionExists = Array.from(elements.branchSelect.options)
+        .some(opt => opt.value === savedBranch);
 
-      // Auto-select the saved branch if it exists in the cached list
-      if (state.savedConfig && state.savedConfig.branch) {
-        const savedBranch = state.savedConfig.branch;
-        const optionExists = Array.from(elements.branchSelect.options)
-          .some(opt => opt.value === savedBranch);
+      if (optionExists) {
+        elements.branchSelect.value = savedBranch;
+        state.branch = savedBranch;
+        console.log('Restored saved branch from cache:', savedBranch);
 
-        if (optionExists) {
-          elements.branchSelect.value = savedBranch;
-          state.branch = savedBranch;
-          console.log('Restored saved branch from cache:', savedBranch);
+        // Fetch and display branch log for restored branch
+        fetchBranchLog(name, savedBranch);
 
-          // Fetch and display branch log for restored branch
-          fetchBranchLog(name, savedBranch);
-
-          // Auto load modules after branch restore (no sync needed)
-          await loadModules(state.savedConfig);
-        }
+        // Auto load modules after branch restore (no sync needed)
+        await loadModules(state.savedConfig);
       }
-      return; // Branches loaded from cache, done
     }
-  } catch (error) {
-    console.error('Failed to load cached branches:', error);
+    return; // Branches loaded from cache, done
   }
 
   // No cached branches available, show placeholder
@@ -787,11 +790,11 @@ async function onModuleChange(savedConfig = null) {
 
   state.moduleName = moduleName;
 
-  // Load variants with saved config
-  await loadVariants(moduleName, savedConfig);
-
-  // Load version with saved config
-  await loadVersion(moduleName, savedConfig);
+  // Load variants and version in parallel
+  await Promise.all([
+    loadVariants(moduleName, savedConfig),
+    loadVersion(moduleName, savedConfig)
+  ]);
 
   // Render JDK versions and restore selection
   const versions = state.availableJdkVersions.length > 0
@@ -1171,25 +1174,27 @@ async function loadApks() {
 // Load Active Builds and Build History
 async function loadActiveBuilds() {
   try {
-    const res = await fetch(`${API_BASE}/builds/active`);
-    const data = await res.json();
+    // Fetch active builds and build history in parallel
+    const [activeRes, historyRes] = await Promise.all([
+      fetch(`${API_BASE}/builds/active`),
+      fetch(`${API_BASE}/builds/history`).catch(() => null)
+    ]);
+
+    const [data, historyData] = await Promise.all([
+      activeRes.json(),
+      historyRes ? historyRes.json() : Promise.resolve(null)
+    ]);
 
     if (data.success) {
       state.activeBuilds = data.builds;
-      // Update project item build indicators
-      updateProjectBuildIndicators();
     }
 
-    // Load build history (all projects, persisted)
-    try {
-      const historyRes = await fetch(`${API_BASE}/builds/history`);
-      const historyData = await historyRes.json();
-      if (historyData.success) {
-        state.recentBuilds = historyData.builds;
-      }
-    } catch (e) {
-      // Ignore - history is optional
+    if (historyData && historyData.success) {
+      state.recentBuilds = historyData.builds;
     }
+
+    // Update indicators AFTER both activeBuilds and recentBuilds are set
+    updateProjectBuildIndicators();
 
     // Re-render with cached APKs (avoid redundant API call)
     renderApks(state.cachedApks);
