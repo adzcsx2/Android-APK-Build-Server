@@ -72,6 +72,11 @@ All persistence is via JSON files in `data/`:
 - `build-history.json` — persistent build history (max N records per project)
 - `build-logs/` — per-project and per-build log files
 
+## Repository Conventions
+
+- **Documentation location:** Only `README.md` and `CLAUDE.md` may exist in the project root. All other documentation files (plans, checklists, guides, summaries, etc.) must be placed in the `docs/` directory.
+- **No loose files:** Verification scripts, test harnesses, and other tooling files also belong in `docs/`, not in the root or `public/`.
+
 ## Platform Constraints
 
 - **Windows-only** — uses `gradlew.bat`, `taskkill /T /F`, `shell: true` for child_process spawn, Windows-specific path handling throughout.
