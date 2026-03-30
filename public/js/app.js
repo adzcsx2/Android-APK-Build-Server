@@ -1,6 +1,7 @@
 // State
 const state = {
   projectName: null,
+  projectType: null,  // 'android' or 'flutter'
   branch: null,
   moduleName: null,
   variant: null,
@@ -8,19 +9,23 @@ const state = {
   versionName: null,
   jdkVersion: null,
   useCache: true,
+  env: null,          // 'dev' or 'prod' for Flutter projects
   buildId: null,
   savedConfig: null, // Store saved configuration for current project
   activeBuilds: [], // Store active builds for display
   recentBuilds: [], // Store recent completed/failed builds for current project
   cachedApks: [], // Cache APKs to avoid redundant API calls
-  availableJdkVersions: [] // Cache available JDK versions
+  availableJdkVersions: [], // Cache available JDK versions
+  buildLogItems: [], // Array of build log items (max 5)
+  currentBuildLogId: null, // Currently expanded build log item
+  buildLogOffsets: {} // Track polling offset per build ID
 };
 
 // Interval ID for active builds refresh (for cleanup)
 let activeBuildsIntervalId = null;
 // Log polling state
 let logPollIntervalId = null;
-let logPollOffset = 0;
+let logPollBuildId = null; // Which build ID is being polled
 // Track whether SSE is actively delivering logs (to avoid duplicates with polling)
 let sseLogActive = false;
 // Track current EventSource for cleanup
@@ -71,7 +76,8 @@ function getCurrentConfig() {
     versionCode: vcInput !== '' ? parseInt(vcInput, 10) : state.versionCode,
     versionName: vnInput !== '' ? vnInput : state.versionName,
     jdkVersion: jdkInput !== '' ? parseInt(jdkInput, 10) : null,
-    useCache: elements.useCacheCheckbox.checked
+    useCache: elements.useCacheCheckbox.checked,
+    env: elements.envSelect ? elements.envSelect.value : state.env
   };
 }
 
@@ -191,12 +197,12 @@ const elements = {
   versionCode: document.getElementById('version-code'),
   versionName: document.getElementById('version-name'),
   useCacheCheckbox: document.getElementById('use-cache-checkbox'),
+  envSelect: document.getElementById('env-select'),
+  envRow: document.getElementById('env-row'),
   buildBtn: document.getElementById('build-btn'),
   buildStatus: document.getElementById('build-status'),
-  buildLog: document.getElementById('build-log'),
+  buildLogsContainer: document.getElementById('build-logs-container'),
   apkList: document.getElementById('apk-list'),
-  clearLogsBtn: document.getElementById('clear-logs-btn'),
-  refreshLogsBtn: document.getElementById('refresh-logs-btn'),
   logInfo: document.getElementById('log-info'),
   steps: {
     project: document.getElementById('step-project'),
@@ -253,6 +259,7 @@ function setupEventListeners() {
       state.versionCode = null;
       state.versionName = null;
       state.jdkVersion = null;
+      state.env = null;
       elements.steps.module.classList.add('hidden');
       elements.steps.config.classList.add('hidden');
       elements.steps.build.classList.add('hidden');
@@ -311,16 +318,25 @@ function setupEventListeners() {
     debouncedSaveConfig();
   });
 
+  // Env select change for Flutter projects - auto-save
+  elements.envSelect.addEventListener('change', () => {
+    state.env = elements.envSelect.value;
+    debouncedSaveConfig();
+  });
+
   // Periodic refresh of active builds (every 5 seconds)
   activeBuildsIntervalId = setInterval(loadActiveBuilds, 5000);
 
-  // Build log buttons
-  elements.refreshLogsBtn.addEventListener('click', () => {
-    if (state.projectName) {
-      loadBuildLog(state.projectName);
+  // Event delegation for build log item toggle
+  elements.buildLogsContainer.addEventListener('click', (e) => {
+    const header = e.target.closest('.build-log-header');
+    if (header) {
+      const item = header.closest('.build-log-item');
+      if (item) {
+        toggleBuildLog(item.dataset.buildId);
+      }
     }
   });
-  elements.clearLogsBtn.addEventListener('click', clearCurrentLogs);
 }
 
 // Cleanup on page unload
@@ -401,7 +417,7 @@ function renderProjects(projects) {
 
   // Add click handlers
   document.querySelectorAll('.project-item').forEach(item => {
-    item.addEventListener('click', () => selectProject(item.dataset.name));
+    item.addEventListener('click', () => selectProject(item.dataset.name, item.dataset.type));
   });
 }
 
@@ -432,17 +448,19 @@ function updateProjectBuildIndicators() {
 }
 
 // Select Project
-async function selectProject(name) {
+async function selectProject(name, type) {
   // Update UI
   document.querySelectorAll('.project-item').forEach(item => {
     item.classList.toggle('selected', item.dataset.name === name);
   });
 
   state.projectName = name;
+  state.projectType = type || 'android';
   state.branch = null;
   state.moduleName = null;
   state.variant = null;
   state.jdkVersion = null;
+  state.env = null;
   state.buildId = null;
 
   // Clear branch log when switching projects
@@ -453,6 +471,7 @@ async function selectProject(name) {
   elements.steps.module.classList.add('hidden');
   elements.steps.config.classList.add('hidden');
   elements.steps.build.classList.add('hidden');
+  elements.envRow.classList.add('hidden');
 
   // Load build logs for this project from disk and always show build progress
   // Close any existing SSE connection from a previous project's build
@@ -461,13 +480,15 @@ async function selectProject(name) {
     currentEventSource = null;
   }
   stopLogPolling();
-  logPollOffset = 0;
-  elements.buildLog.textContent = '加载中...';
+  state.buildLogOffsets = {};
+  state.currentBuildLogId = null;
+  state.buildLogItems = [];
+  elements.buildLogsContainer.innerHTML = '<div class="loading">加载中...</div>';
   elements.logInfo.textContent = '';
   elements.steps.build.classList.remove('hidden');
   elements.buildStatus.className = 'build-status';
   elements.buildStatus.querySelector('.status-text').textContent = '准备中...';
-  loadBuildLog(name);
+  loadBuildLogs(name);
 
   // Fire-and-forget tasks
   document.getElementById('step-apk-list').classList.remove('hidden');
@@ -506,7 +527,7 @@ async function selectProject(name) {
       elements.buildStatus.querySelector('.status-text').textContent = '构建中... (重新连接)';
     }
     // Reconnect to SSE to resume receiving logs/status
-    connectBuildLogs(activeForProject.id);
+    connectBuildLogs(activeForProject.id, activeForProject);
   }
 
   // Process cached branches result (from parallel fetch above)
@@ -739,6 +760,14 @@ async function syncRepository() {
 
 // Load Modules
 async function loadModules(savedConfig = null) {
+  // For Flutter projects, skip module selection
+  if (state.projectType === 'flutter') {
+    state.moduleName = 'app';
+    elements.steps.module.classList.add('hidden');
+    await onModuleChange(savedConfig);
+    return;
+  }
+
   try {
     elements.moduleSelect.innerHTML = '<option value="">加载中...</option>';
 
@@ -785,7 +814,7 @@ function renderModules(modules, savedConfig = null) {
 
 // On Module Change
 async function onModuleChange(savedConfig = null) {
-  const moduleName = elements.moduleSelect.value;
+  const moduleName = elements.moduleSelect.value || state.moduleName;
   if (!moduleName) return;
 
   state.moduleName = moduleName;
@@ -808,6 +837,19 @@ async function onModuleChange(savedConfig = null) {
   if (savedConfig && savedConfig.useCache !== undefined) {
     elements.useCacheCheckbox.checked = savedConfig.useCache;
     state.useCache = savedConfig.useCache;
+  }
+
+  // Restore env for Flutter projects
+  if (state.projectType === 'flutter') {
+    if (savedConfig && savedConfig.env) {
+      elements.envSelect.value = savedConfig.env;
+      state.env = savedConfig.env;
+    } else {
+      state.env = elements.envSelect.value || 'dev';
+    }
+    elements.envRow.classList.remove('hidden');
+  } else {
+    elements.envRow.classList.add('hidden');
   }
 
   // Show config step
@@ -916,6 +958,11 @@ async function startBuild() {
     : null;
   state.useCache = elements.useCacheCheckbox.checked;
 
+  if (state.projectType === 'flutter' && !state.env) {
+    alert('请选择环境 (env)');
+    return;
+  }
+
   if (!state.variant) {
     alert('请选择变体');
     return;
@@ -937,7 +984,8 @@ async function startBuild() {
         versionCode: state.versionCode,
         versionName: state.versionName,
         jdkVersion: state.jdkVersion,
-        useCache: state.useCache
+        useCache: state.useCache,
+        env: state.projectType === 'flutter' ? state.env : undefined
       })
     });
 
@@ -946,14 +994,28 @@ async function startBuild() {
     if (data.success) {
       state.buildId = data.buildId;
       elements.steps.build.classList.remove('hidden');
-      elements.buildLog.textContent = '';
+      elements.buildLogsContainer.innerHTML = '';
 
       // Keep button disabled showing "构建中..." until loadActiveBuilds confirms state
       elements.buildBtn.disabled = true;
       elements.buildBtn.textContent = '构建中...';
 
+      // Build a buildInfo object from current state for the log item display
+      const buildInfo = {
+        id: data.buildId,
+        projectName: state.projectName,
+        moduleName: state.moduleName,
+        variant: state.variant,
+        versionCode: state.versionCode,
+        versionName: state.versionName,
+        env: state.env,
+        status: 'pending',
+        startTime: new Date().toISOString(),
+        progress: 0
+      };
+
       // Connect to SSE
-      connectBuildLogs(data.buildId);
+      connectBuildLogs(data.buildId, buildInfo);
 
       // Refresh active builds, then update button state based on actual server state
       loadActiveBuilds().then(() => {
@@ -987,7 +1049,7 @@ function updateBuildButtonState() {
 
 // Connect to Build via SSE for real-time log streaming and status updates.
 // Disk log polling is used as fallback when SSE log events are not received.
-function connectBuildLogs(buildId) {
+function connectBuildLogs(buildId, initialBuildInfo) {
   // Close any existing SSE connection
   if (currentEventSource) {
     currentEventSource.close();
@@ -997,8 +1059,10 @@ function connectBuildLogs(buildId) {
   const eventSource = new EventSource(`${API_BASE}/build/${buildId}/logs`);
   currentEventSource = eventSource;
 
+  // Use provided buildInfo or fall back to activeBuilds lookup
+  const buildInfo = initialBuildInfo || state.activeBuilds.find(b => b.id === buildId);
+
   // Set initial status based on build state (may be updated by SSE status event)
-  const buildInfo = state.activeBuilds.find(b => b.id === buildId);
   if (buildInfo && buildInfo.status === 'pending') {
     elements.buildStatus.className = 'build-status queued';
     elements.buildStatus.querySelector('.status-text').textContent = '排队中，等待构建...';
@@ -1007,14 +1071,26 @@ function connectBuildLogs(buildId) {
     elements.buildStatus.querySelector('.status-text').textContent = '构建中...';
   }
 
+  // Ensure there is a build log item for this build
+  ensureBuildLogItem(buildId, buildInfo);
+  state.currentBuildLogId = buildId;
+  renderBuildLogs();
+
   // Start polling disk logs as fallback for real-time display
   startLogPolling(buildId);
 
   // Listen for real-time log events from SSE (primary mechanism)
   eventSource.addEventListener('log', (e) => {
     sseLogActive = true;
-    elements.buildLog.textContent += e.data;
-    elements.buildLog.scrollTop = elements.buildLog.scrollHeight;
+    const item = state.buildLogItems.find(i => i.buildId === buildId);
+    if (item) {
+      item.logs += e.data;
+      // Auto-expand the building item
+      if (state.currentBuildLogId !== buildId) {
+        state.currentBuildLogId = buildId;
+      }
+      renderBuildLogs();
+    }
   });
 
   eventSource.addEventListener('status', (e) => {
@@ -1031,7 +1107,7 @@ function connectBuildLogs(buildId) {
     }
   });
 
-  eventSource.addEventListener('complete', (e) => {
+  eventSource.addEventListener('complete', async (e) => {
     const data = JSON.parse(e.data);
     eventSource.close();
     currentEventSource = null;
@@ -1041,18 +1117,20 @@ function connectBuildLogs(buildId) {
 
     state.buildId = null;
 
-    // Stop polling, do a final log load from disk
+    // Stop polling
     stopLogPolling();
-    loadBuildLog(state.projectName);
 
-    // Reload APK list and active builds
+    // Reload active builds FIRST so the completed build appears in recentBuilds
+    await loadActiveBuilds();
+    // Then load build logs from disk (the completed build is now in recentBuilds)
+    loadBuildLogs(state.projectName);
+
+    // Reload APK list
     loadApks();
-    loadActiveBuilds().then(() => {
-      updateBuildButtonState();
-    });
+    updateBuildButtonState();
   });
 
-  eventSource.addEventListener('error', (e) => {
+  eventSource.addEventListener('error', async (e) => {
     let data;
     try {
       data = JSON.parse(e.data);
@@ -1062,10 +1140,9 @@ function connectBuildLogs(buildId) {
       currentEventSource = null;
       state.buildId = null;
       stopLogPolling();
-      loadBuildLog(state.projectName);
-      loadActiveBuilds().then(() => {
-        updateBuildButtonState();
-      });
+      await loadActiveBuilds();
+      loadBuildLogs(state.projectName);
+      updateBuildButtonState();
       return;
     }
 
@@ -1086,60 +1163,68 @@ function connectBuildLogs(buildId) {
     state.buildId = null;
 
     stopLogPolling();
-    loadBuildLog(state.projectName);
-    loadActiveBuilds().then(() => {
-      updateBuildButtonState();
-    });
+    // Reload active builds FIRST so the failed build appears in recentBuilds
+    await loadActiveBuilds();
+    // Then load build logs from disk
+    loadBuildLogs(state.projectName);
+    updateBuildButtonState();
   });
 
-  eventSource.onerror = () => {
+  eventSource.onerror = async () => {
     eventSource.close();
     currentEventSource = null;
     state.buildId = null;
     elements.buildStatus.className = 'build-status error';
     elements.buildStatus.querySelector('.status-text').textContent = '连接断开';
 
-    updateBuildButtonState();
-
     stopLogPolling();
-    loadBuildLog(state.projectName);
+    await loadActiveBuilds();
+    loadBuildLogs(state.projectName);
+    updateBuildButtonState();
   };
 }
 
 // Poll disk logs in real-time during build
 function startLogPolling(buildId) {
-  if (logPollIntervalId) return;
+  if (logPollIntervalId) {
+    stopLogPolling();
+  }
+  logPollBuildId = buildId;
 
   logPollIntervalId = setInterval(async () => {
-    if (!state.projectName) return;
+    if (!state.projectName || !logPollBuildId) return;
 
     try {
+      const offset = state.buildLogOffsets[logPollBuildId] || 0;
       const res = await fetch(
-        `${API_BASE}/build-logs/${encodeURIComponent(state.projectName)}/poll?offset=${logPollOffset}`
+        `${API_BASE}/build-logs/${encodeURIComponent(state.projectName)}/${logPollBuildId}/poll?offset=${offset}`
       );
       const data = await res.json();
 
       if (data.success && data.content) {
         // Only write logs from polling if SSE is not delivering them (avoid duplicates)
         if (!sseLogActive) {
-          elements.buildLog.textContent += data.content;
-          elements.buildLog.scrollTop = elements.buildLog.scrollHeight;
+          const item = state.buildLogItems.find(i => i.buildId === logPollBuildId);
+          if (item) {
+            item.logs += data.content;
+            if (state.currentBuildLogId !== logPollBuildId) {
+              state.currentBuildLogId = logPollBuildId;
+            }
+            renderBuildLogs();
+          }
         }
-        logPollOffset = data.offset;
+        state.buildLogOffsets[logPollBuildId] = data.offset;
       }
 
       // Check if the build is still active by querying its status
-      // Don't rely on state.activeBuilds which may not be updated yet
-      if (buildId) {
-        try {
-          const statusRes = await fetch(`${API_BASE}/build/${buildId}/status`);
-          const statusData = await statusRes.json();
-          if (statusData.success && ['completed', 'failed', 'cancelled'].includes(statusData.build.status)) {
-            stopLogPolling();
-          }
-        } catch (e) {
-          // Ignore status check errors, continue polling
+      try {
+        const statusRes = await fetch(`${API_BASE}/build/${logPollBuildId}/status`);
+        const statusData = await statusRes.json();
+        if (statusData.success && ['completed', 'failed', 'cancelled'].includes(statusData.build.status)) {
+          stopLogPolling();
         }
+      } catch (e) {
+        // Ignore status check errors, continue polling
       }
     } catch (error) {
       // Ignore polling errors
@@ -1236,9 +1321,9 @@ async function cancelBuild(buildId) {
         elements.buildStatus.querySelector('.status-text').textContent = '构建已取消';
         state.buildId = null;
 
-        // Reload build log from disk
+        // Reload build logs from disk
         if (state.projectName) {
-          loadBuildLog(state.projectName);
+          loadBuildLogs(state.projectName);
         }
       }
 
@@ -1428,6 +1513,10 @@ async function deleteBuildRecord(buildId, silent = false) {
 
     if (data.success) {
       await loadActiveBuilds();
+      // Also refresh build logs to reflect the deleted record
+      if (state.projectName) {
+        loadBuildLogs(state.projectName);
+      }
       if (!silent) showToast('构建记录已删除', 'success');
     } else {
       if (!silent) alert(`删除失败: ${data.error}`);
@@ -1438,88 +1527,186 @@ async function deleteBuildRecord(buildId, silent = false) {
 }
 
 // ============================================
-// BUILD LOG FUNCTIONS (Persistent)
+// BUILD LOG FUNCTIONS (Per-build display)
 // ============================================
 
 /**
- * Load build log for a project from disk (full load, resets scroll position)
+ * Ensure a build log item exists in the state for a given buildId
  */
-async function loadBuildLog(projectName) {
+function ensureBuildLogItem(buildId, buildInfo) {
+  let item = state.buildLogItems.find(i => i.buildId === buildId);
+  if (!item) {
+    item = {
+      buildId: buildId,
+      build: buildInfo || {},
+      logs: '',
+      totalSize: 0,
+      trimmed: false,
+      loading: false
+    };
+    state.buildLogItems.unshift(item);
+    // Keep max 5 items
+    if (state.buildLogItems.length > 5) {
+      state.buildLogItems.pop();
+    }
+  }
+  return item;
+}
+
+/**
+ * Load build logs for the current project - fetches up to 5 recent builds and their logs
+ */
+async function loadBuildLogs(projectName) {
   if (!projectName) return;
 
-  // Reset offset for fresh load
-  logPollOffset = 0;
-  elements.buildLog.textContent = '加载中...';
-  elements.buildLog.scrollTop = 0;
+  state.buildLogItems = [];
+  state.currentBuildLogId = null;
+  elements.buildLogsContainer.innerHTML = '<div class="loading">加载中...</div>';
 
-  try {
-    const res = await fetch(`${API_BASE}/build-logs/${encodeURIComponent(projectName)}`);
-    const data = await res.json();
+  // Combine active builds and recent builds for this project
+  const allBuilds = [
+    ...state.activeBuilds,
+    ...(state.recentBuilds || [])
+  ].filter(b => b.projectName === projectName);
 
-    if (data.success) {
-      // Reverse log content so newest entries appear at top
-      const content = data.content || '暂无日志';
-      if (data.content) {
-        const lines = content.split('\n');
-        lines.reverse();
-        elements.buildLog.textContent = lines.join('\n');
-      } else {
-        elements.buildLog.textContent = content;
-      }
-      elements.buildLog.scrollTop = 0;
+  // Sort by start time, newest first, limit to 5
+  allBuilds.sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
+  const buildsToLoad = allBuilds.slice(0, 5);
 
-      // Update offset to end of file for subsequent polling
-      logPollOffset = data.totalSize;
+  if (buildsToLoad.length === 0) {
+    elements.buildLogsContainer.innerHTML = '<div class="loading">暂无构建日志</div>';
+    elements.logInfo.textContent = '';
+    return;
+  }
 
-      if (data.totalSize > 0) {
-        let info = `日志大小: ${data.sizeDisplay}`;
-        if (data.trimmed) {
-          info += ' (仅显示最近 512KB)';
-        }
-        elements.logInfo.textContent = info;
-      } else {
-        elements.logInfo.textContent = '';
-      }
-    } else {
-      elements.buildLog.textContent = '暂无日志';
-      elements.logInfo.textContent = '';
+  // Create items for all builds
+  state.buildLogItems = buildsToLoad.map(build => ({
+    buildId: build.id,
+    build: build,
+    logs: '',
+    totalSize: 0,
+    trimmed: false,
+    loading: true
+  }));
+
+  // If there's a currently building item, auto-expand it
+  const buildingItem = state.buildLogItems.find(i =>
+    i.build.status === 'building' || i.build.status === 'pending'
+  );
+  if (buildingItem) {
+    state.currentBuildLogId = buildingItem.buildId;
+  }
+
+  renderBuildLogs();
+
+  // Load logs for each build in parallel
+  const loadPromises = buildsToLoad.map(async (build) => {
+    const item = state.buildLogItems.find(i => i.buildId === build.id);
+    if (!item) return;
+
+    // Skip disk load for active builds (building/pending) - logs are streamed via SSE
+    if (build.status === 'building' || build.status === 'pending') {
+      item.logs = '';
+      item.loading = false;
+      return;
     }
-  } catch (error) {
-    elements.buildLog.textContent = '暂无日志';
+
+    try {
+      const res = await fetch(
+        `${API_BASE}/build-logs/${encodeURIComponent(projectName)}/${build.id}`
+      );
+      const data = await res.json();
+
+      if (item && data.success) {
+        item.logs = data.content || '暂无日志';
+        item.totalSize = data.totalSize;
+        item.trimmed = data.trimmed;
+        item.loading = false;
+        state.buildLogOffsets[build.id] = data.totalSize;
+      }
+    } catch (error) {
+      if (item) {
+        item.logs = '日志加载失败';
+        item.loading = false;
+      }
+    }
+  });
+
+  await Promise.all(loadPromises);
+  renderBuildLogs();
+
+  // Update log info
+  const totalSize = state.buildLogItems.reduce((sum, i) => sum + i.totalSize, 0);
+  if (totalSize > 0) {
+    elements.logInfo.textContent = `共 ${state.buildLogItems.length} 条构建记录`;
+  } else {
     elements.logInfo.textContent = '';
   }
 }
 
 /**
- * Clear logs for the currently selected project
+ * Render build log items in the container
  */
-async function clearCurrentLogs() {
-  const projectName = state.projectName;
-  if (!projectName) {
-    alert('请先选择项目');
+function renderBuildLogs() {
+  if (state.buildLogItems.length === 0) {
+    elements.buildLogsContainer.innerHTML = '<div class="loading">暂无构建日志</div>';
     return;
   }
 
-  if (!confirm(`确定要清空 ${projectName} 的所有构建日志吗？`)) {
-    return;
-  }
+  elements.buildLogsContainer.innerHTML = state.buildLogItems.map(item => {
+    const build = item.build;
+    const status = build.status;
+    const isExpanded = state.currentBuildLogId === item.buildId;
 
-  try {
-    const res = await fetch(`${API_BASE}/build-logs/${encodeURIComponent(projectName)}`, {
-      method: 'DELETE'
-    });
-    const data = await res.json();
-
-    if (data.success) {
-      elements.buildLog.textContent = '日志已清空';
-      elements.buildLog.scrollTop = 0;
-      elements.logInfo.textContent = '';
-      logPollOffset = 0;
-      showToast(`${projectName} 日志已清空`, 'success');
-    } else {
-      showToast(`清空失败: ${data.error}`, 'error');
+    let statusClass, statusLabel;
+    switch (status) {
+      case 'completed': statusClass = 'success'; statusLabel = '成功'; break;
+      case 'failed': statusClass = 'failed'; statusLabel = '失败'; break;
+      case 'cancelled': statusClass = 'cancelled'; statusLabel = '已取消'; break;
+      case 'building': statusClass = 'building'; statusLabel = '构建中'; break;
+      case 'pending': statusClass = 'pending'; statusLabel = '排队中'; break;
+      default: statusClass = ''; statusLabel = status || '-';
     }
-  } catch (error) {
-    showToast(`清空失败: ${error.message}`, 'error');
+
+    const startTime = build.startTime ? new Date(build.startTime).toLocaleString() : '-';
+
+    const variantInfo = build.variant ? `<span class="build-log-variant">${escapeHtml(build.variant)}</span>` : '';
+    const versionInfo = build.versionName ? `<span class="build-log-version">v${escapeHtml(build.versionName)}</span>` : '';
+
+    const logContent = item.loading
+      ? '<div class="loading">加载中...</div>'
+      : `<pre>${escapeHtml(item.logs)}</pre>`;
+
+    const trimmedInfo = item.trimmed ? ' (日志已截断)' : '';
+
+    return `
+      <div class="build-log-item" data-build-id="${escapeHtml(item.buildId)}">
+        <div class="build-log-header">
+          <div class="build-log-meta">
+            <span class="build-log-status ${statusClass}">${statusLabel}</span>
+            <span class="build-log-time">${startTime}</span>
+            ${variantInfo}
+            ${versionInfo}
+            ${trimmedInfo}
+          </div>
+          <div class="build-log-toggle">${isExpanded ? '▼' : '▶'}</div>
+        </div>
+        <div class="build-log-content ${isExpanded ? 'expanded' : ''}">
+          ${logContent}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+/**
+ * Toggle build log expansion
+ */
+function toggleBuildLog(buildId) {
+  if (state.currentBuildLogId === buildId) {
+    state.currentBuildLogId = null;
+  } else {
+    state.currentBuildLogId = buildId;
   }
+  renderBuildLogs();
 }

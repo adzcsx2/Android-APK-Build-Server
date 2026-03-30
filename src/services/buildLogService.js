@@ -13,6 +13,7 @@ const path = require('path');
 const LOG_DIR = path.join(__dirname, '../../data/build-logs');
 const MAX_LOG_SIZE = 5 * 1024 * 1024; // 5MB
 const TRIM_LOG_SIZE = 2 * 1024 * 1024; // 2MB
+const MAX_BUILD_LOG_SIZE = 1 * 1024 * 1024; // 1MB per build log
 
 /**
  * Ensure log directory exists
@@ -42,6 +43,195 @@ function sanitizeProjectName(projectName) {
     throw new Error('Invalid project name');
   }
   return safeName;
+}
+
+/**
+ * Sanitize build ID for use as filename (prevent path traversal)
+ */
+function sanitizeBuildId(buildId) {
+  // Build IDs are UUID segments (8 hex chars) or full UUIDs
+  if (!/^[\da-f]{8}(-[\da-f]{4}){3}-[\da-f]{12}$/i.test(buildId) &&
+      !/^[\da-f]{8}$/i.test(buildId)) {
+    throw new Error('Invalid build ID format');
+  }
+  return buildId;
+}
+
+/**
+ * Get the log file path for a specific build
+ * @param {string} projectName - Project name
+ * @param {string} buildId - Build ID
+ * @returns {string} - Log file path
+ */
+function getBuildLogFilePath(projectName, buildId) {
+  const safeName = sanitizeProjectName(projectName);
+  const safeBuildId = sanitizeBuildId(buildId);
+  return path.join(LOG_DIR, safeName, `${safeBuildId}.log`);
+}
+
+/**
+ * Append a log entry to a specific build's log file
+ * @param {string} projectName - Project name
+ * @param {string} buildId - Build ID
+ * @param {string} message - Log message
+ */
+function appendBuildLog(projectName, buildId, message) {
+  try {
+    ensureLogDir();
+    const safeName = sanitizeProjectName(projectName);
+    const projectDir = path.join(LOG_DIR, safeName);
+
+    if (!fs.existsSync(projectDir)) {
+      fs.mkdirSync(projectDir, { recursive: true });
+    }
+
+    const logFile = getBuildLogFilePath(projectName, buildId);
+    const timestamp = new Date().toISOString();
+    const entry = `[${timestamp}] ${message}\n`;
+
+    fs.appendFileSync(logFile, entry, 'utf8');
+
+    // Trim if exceeding max build log size
+    trimIfNeeded(logFile, MAX_BUILD_LOG_SIZE, MAX_BUILD_LOG_SIZE * 0.4);
+  } catch (error) {
+    console.error(`Failed to write build log for ${projectName}/${buildId}:`, error.message);
+  }
+}
+
+/**
+ * Read log content for a specific build
+ * @param {string} projectName - Project name
+ * @param {string} buildId - Build ID
+ * @param {number} maxBytes - Max bytes to read (default 256KB)
+ * @returns {{ content: string, totalSize: number, trimmed: boolean }}
+ */
+function readBuildLog(projectName, buildId, maxBytes = 256 * 1024) {
+  try {
+    const logFile = getBuildLogFilePath(projectName, buildId);
+
+    if (!fs.existsSync(logFile)) {
+      return { content: '', totalSize: 0, trimmed: false };
+    }
+
+    const stats = fs.statSync(logFile);
+    const totalSize = stats.size;
+
+    if (totalSize === 0) {
+      return { content: '', totalSize: 0, trimmed: false };
+    }
+
+    if (totalSize <= maxBytes) {
+      const content = fs.readFileSync(logFile, 'utf8');
+      return { content, totalSize, trimmed: false };
+    }
+
+    // Read last maxBytes, start from line boundary
+    let fd;
+    let buffer;
+    try {
+      fd = fs.openSync(logFile, 'r');
+      buffer = Buffer.alloc(maxBytes);
+      fs.readSync(fd, buffer, 0, maxBytes, totalSize - maxBytes);
+    } finally {
+      if (fd !== undefined) fs.closeSync(fd);
+    }
+
+    let content = buffer.toString('utf8');
+    const firstNewline = content.indexOf('\n');
+    if (firstNewline > 0) {
+      content = content.substring(firstNewline + 1);
+    }
+
+    return { content, totalSize, trimmed: true };
+  } catch (error) {
+    console.error(`Failed to read build log for ${projectName}/${buildId}:`, error.message);
+    return { content: '', totalSize: 0, trimmed: false };
+  }
+}
+
+/**
+ * Read build log content starting from a byte offset (for real-time polling)
+ * @param {string} projectName - Project name
+ * @param {string} buildId - Build ID
+ * @param {number} fromOffset - Start reading from this byte offset
+ * @param {number} maxBytes - Max bytes to read (default 128KB)
+ * @returns {{ content: string, totalSize: number, offset: number, eof: boolean }}
+ */
+function readBuildLogFromOffset(projectName, buildId, fromOffset = 0, maxBytes = 128 * 1024) {
+  try {
+    const logFile = getBuildLogFilePath(projectName, buildId);
+
+    if (!fs.existsSync(logFile)) {
+      return { content: '', totalSize: 0, offset: 0, eof: true };
+    }
+
+    const stats = fs.statSync(logFile);
+    const totalSize = stats.size;
+
+    if (fromOffset >= totalSize) {
+      return { content: '', totalSize, offset: fromOffset, eof: true };
+    }
+
+    const remaining = totalSize - fromOffset;
+    const readSize = Math.min(remaining, maxBytes);
+
+    let buffer;
+    const fd = fs.openSync(logFile, 'r');
+    try {
+      buffer = Buffer.alloc(readSize);
+      fs.readSync(fd, buffer, 0, readSize, fromOffset);
+    } finally {
+      fs.closeSync(fd);
+    }
+
+    return {
+      content: buffer.toString('utf8'),
+      totalSize,
+      offset: fromOffset + readSize,
+      eof: fromOffset + readSize >= totalSize
+    };
+  } catch (error) {
+    console.error(`Failed to read build log offset for ${projectName}/${buildId}:`, error.message);
+    return { content: '', totalSize: 0, offset: fromOffset, eof: true };
+  }
+}
+
+/**
+ * Clear log for a specific build
+ * @param {string} projectName - Project name
+ * @param {string} buildId - Build ID
+ * @returns {boolean}
+ */
+function clearBuildLog(projectName, buildId) {
+  try {
+    const logFile = getBuildLogFilePath(projectName, buildId);
+    if (fs.existsSync(logFile)) {
+      fs.unlinkSync(logFile);
+    }
+    return true;
+  } catch (error) {
+    console.error(`Failed to clear build log for ${projectName}/${buildId}:`, error.message);
+    return false;
+  }
+}
+
+/**
+ * Get all build log file names for a project
+ * @param {string} projectName - Project name
+ * @returns {string[]} - Array of build IDs that have log files
+ */
+function getBuildLogFiles(projectName) {
+  try {
+    const safeName = sanitizeProjectName(projectName);
+    const projectDir = path.join(LOG_DIR, safeName);
+    if (!fs.existsSync(projectDir)) return [];
+
+    return fs.readdirSync(projectDir)
+      .filter(f => f.endsWith('.log'))
+      .map(f => f.replace('.log', ''));
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -85,7 +275,8 @@ function appendBuildHeader(projectName, buildId, buildInfo) {
     '========================================',
     ''
   ].join('\n');
-  appendLog(projectName, buildId, header);
+  // Write to per-build log file
+  appendBuildLog(projectName, buildId, header);
 }
 
 /**
@@ -103,7 +294,8 @@ function appendBuildFooter(projectName, buildId, status, error) {
     '========================================',
     ''
   ].join('\n');
-  appendLog(projectName, buildId, footer);
+  // Write to per-build log file
+  appendBuildLog(projectName, buildId, footer);
 }
 
 /**
@@ -242,9 +434,19 @@ function getLoggedProjects() {
 function clearProjectLogs(projectName) {
   try {
     const safeName = sanitizeProjectName(projectName);
+    // Clear legacy log file
     const logFile = getLogFilePath(safeName);
     if (fs.existsSync(logFile)) {
       fs.unlinkSync(logFile);
+    }
+    // Clear per-build log directory
+    const projectDir = path.join(LOG_DIR, safeName);
+    if (fs.existsSync(projectDir)) {
+      const files = fs.readdirSync(projectDir);
+      for (const file of files) {
+        fs.unlinkSync(path.join(projectDir, file));
+      }
+      fs.rmdirSync(projectDir);
     }
     return true;
   } catch (error) {
@@ -259,10 +461,18 @@ function clearProjectLogs(projectName) {
 function clearAllLogs() {
   try {
     ensureLogDir();
-    const files = fs.readdirSync(LOG_DIR);
-    for (const file of files) {
-      if (file.endsWith('.log')) {
-        fs.unlinkSync(path.join(LOG_DIR, file));
+    const entries = fs.readdirSync(LOG_DIR);
+    for (const entry of entries) {
+      const entryPath = path.join(LOG_DIR, entry);
+      if (fs.statSync(entryPath).isDirectory()) {
+        // Remove per-build log directory
+        const files = fs.readdirSync(entryPath);
+        for (const file of files) {
+          fs.unlinkSync(path.join(entryPath, file));
+        }
+        fs.rmdirSync(entryPath);
+      } else if (entry.endsWith('.log')) {
+        fs.unlinkSync(entryPath);
       }
     }
     return true;
@@ -273,17 +483,17 @@ function clearAllLogs() {
 }
 
 /**
- * Trim log file if it exceeds MAX_LOG_SIZE
- * Removes oldest content until file is under TRIM_LOG_SIZE
+ * Trim log file if it exceeds maxSize
+ * Removes oldest content until file is under trimSize
  */
-function trimIfNeeded(logFile) {
+function trimIfNeeded(logFile, maxSize = MAX_LOG_SIZE, trimSize = TRIM_LOG_SIZE) {
   try {
     const stats = fs.statSync(logFile);
-    if (stats.size <= MAX_LOG_SIZE) return;
+    if (stats.size <= maxSize) return;
 
     // Read entire file, find where to cut to get under TRIM_LOG_SIZE
     const content = fs.readFileSync(logFile, 'utf8');
-    const targetLength = Math.floor(content.length * (TRIM_LOG_SIZE / stats.size));
+    const targetLength = Math.floor(content.length * (trimSize / stats.size));
 
     // Find the next newline after the target cut point
     let cutPoint = content.indexOf('\n', targetLength);
@@ -292,10 +502,10 @@ function trimIfNeeded(logFile) {
     }
 
     const trimmed = content.substring(cutPoint + 1);
-    const trimHeader = `\n--- Log trimmed at ${new Date().toISOString()} (exceeded ${formatBytes(MAX_LOG_SIZE)}) ---\n\n`;
+    const trimHeader = `\n--- Log trimmed at ${new Date().toISOString()} (exceeded ${formatBytes(maxSize)}) ---\n\n`;
 
     fs.writeFileSync(logFile, trimHeader + trimmed, 'utf8');
-    console.log(`Trimmed log file: ${path.basename(logFile)} (${formatBytes(stats.size)} -> ${formatBytes(TRIM_LOG_SIZE + trimHeader.length)})`);
+    console.log(`Trimmed log file: ${path.basename(logFile)} (${formatBytes(stats.size)} -> ${formatBytes(trimSize + trimHeader.length)})`);
   } catch (error) {
     console.error(`Failed to trim log ${logFile}:`, error.message);
   }
@@ -320,5 +530,12 @@ module.exports = {
   getLoggedProjects,
   clearProjectLogs,
   clearAllLogs,
-  formatBytes
+  formatBytes,
+  // Per-build log functions
+  getBuildLogFilePath,
+  appendBuildLog,
+  readBuildLog,
+  readBuildLogFromOffset,
+  clearBuildLog,
+  getBuildLogFiles
 };

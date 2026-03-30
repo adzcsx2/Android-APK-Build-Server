@@ -269,6 +269,126 @@ select:focus, input:focus {
   margin: 0;
 }
 
+/* Build Logs Container - Multiple build log items */
+.build-logs-container {
+  margin-top: 15px;
+  max-height: 600px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.build-log-item {
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.build-log-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  cursor: pointer;
+  background: #f8f9fa;
+  transition: background 0.15s ease;
+  user-select: none;
+}
+
+.build-log-header:hover {
+  background: #f0f4ff;
+}
+
+.build-log-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+  flex: 1;
+}
+
+.build-log-status {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.8em;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.build-log-status.success {
+  background: #d4edda;
+  color: #155724;
+}
+
+.build-log-status.failed {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.build-log-status.cancelled {
+  background: #e2e3e5;
+  color: #6c757d;
+}
+
+.build-log-status.building {
+  background: #fff3cd;
+  color: #856404;
+}
+
+.build-log-status.pending {
+  background: #e8f0fe;
+  color: #004085;
+}
+
+.build-log-time {
+  color: #666;
+  font-size: 0.85em;
+}
+
+.build-log-variant {
+  color: #333;
+  font-weight: 500;
+  font-size: 0.9em;
+}
+
+.build-log-version {
+  color: #888;
+  font-size: 0.85em;
+}
+
+.build-log-toggle {
+  color: #666;
+  font-size: 12px;
+  flex-shrink: 0;
+  width: 20px;
+  text-align: center;
+}
+
+.build-log-content {
+  display: none;
+  padding: 0;
+  background: #1e1e1e;
+}
+
+.build-log-content.expanded {
+  display: block;
+}
+
+.build-log-content pre {
+  color: #d4d4d4;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 0.85em;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+  padding: 12px;
+  max-height: 350px;
+  overflow-y: auto;
+}
+
 /* Build Status */
 .build-status {
   padding: 15px;

@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const config = require('../../config.json');
 const apkService = require('./apkService');
+const buildLogService = require('./buildLogService');
 
 const HISTORY_FILE = path.join(__dirname, '../../data/build-history.json');
 const MAX_RECORDS_PER_PROJECT = (config.apk && config.apk.maxRecordsPerProject) || 5;
@@ -96,6 +97,14 @@ function deleteBuildRecord(buildId) {
     const filename = record.apkUrl.split('/').pop();
     apkService.deleteApk(filename);
   }
+  // Delete associated per-build log file
+  if (record) {
+    try {
+      buildLogService.clearBuildLog(record.projectName, record.id);
+    } catch (err) {
+      console.error(`[BuildHistory] Failed to delete build log:`, err.message);
+    }
+  }
 
   history.splice(index, 1);
   saveHistory(history);
@@ -158,6 +167,13 @@ function cleanupOldRecords() {
           } catch (err) {
             console.error(`[BuildHistory] Failed to delete APK ${filename}:`, err.message);
           }
+        }
+        // Delete associated per-build log file
+        try {
+          buildLogService.clearBuildLog(record.projectName, record.id);
+          console.log(`[BuildHistory] Deleted build log: ${record.projectName}/${record.id}`);
+        } catch (err) {
+          console.error(`[BuildHistory] Failed to delete build log ${record.id}:`, err.message);
         }
       }
     }

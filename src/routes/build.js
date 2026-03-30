@@ -1,6 +1,7 @@
 const express = require('express');
 const projectService = require('../services/projectService');
 const gradleService = require('../services/gradleService');
+const flutterBuildService = require('../services/flutterBuildService');
 const buildQueue = require('../services/buildQueue');
 const apkService = require('../services/apkService');
 const buildLogService = require('../services/buildLogService');
@@ -31,26 +32,50 @@ async function executeBuild(buildId, res) {
   }
 
   try {
-    const result = await gradleService.runBuild(
-      project.path,
-      build.branch,
-      build.moduleName,
-      build.variant,
-      build.versionCode,
-      build.versionName,
-      build.jdkVersion,
-      build.useCache,
-      (log) => {
-        buildQueue.addLog(buildId, log);
-        if (res && !res.writableEnded) {
-          sse.sendLog(res, log);
-        }
-      },
-      (proc) => {
-        buildQueue.registerBuildProcess(buildId, proc);
-      },
-      () => buildQueue.isBuildCancelled(buildId)
-    );
+    let result;
+    if (project.type === 'flutter') {
+      result = await flutterBuildService.runBuild(
+        project.path,
+        build.branch,
+        build.flavor,
+        build.buildType,
+        build.env,
+        build.versionCode,
+        build.versionName,
+        build.jdkVersion,
+        (log) => {
+          buildQueue.addLog(buildId, log);
+          if (res && !res.writableEnded) {
+            sse.sendLog(res, log);
+          }
+        },
+        (proc) => {
+          buildQueue.registerBuildProcess(buildId, proc);
+        },
+        () => buildQueue.isBuildCancelled(buildId)
+      );
+    } else {
+      result = await gradleService.runBuild(
+        project.path,
+        build.branch,
+        build.moduleName,
+        build.variant,
+        build.versionCode,
+        build.versionName,
+        build.jdkVersion,
+        build.useCache,
+        (log) => {
+          buildQueue.addLog(buildId, log);
+          if (res && !res.writableEnded) {
+            sse.sendLog(res, log);
+          }
+        },
+        (proc) => {
+          buildQueue.registerBuildProcess(buildId, proc);
+        },
+        () => buildQueue.isBuildCancelled(buildId)
+      );
+    }
 
     const currentBuild = buildQueue.getBuild(buildId);
     if (currentBuild && currentBuild.status === 'cancelled') {
@@ -126,7 +151,7 @@ buildQueue.setOnSlotAvailable((nextBuildId) => {
  */
 router.post('/build', async (req, res) => {
   try {
-    const { projectName, branch, moduleName, variant, versionCode, versionName, jdkVersion, useCache } = req.body;
+    const { projectName, branch, moduleName, variant, versionCode, versionName, jdkVersion, useCache, env } = req.body;
 
     if (!projectName || !branch || !moduleName || !variant) {
       return res.status(400).json({ success: false, error: '缺少必要参数' });
@@ -148,20 +173,53 @@ router.post('/build', async (req, res) => {
       return res.status(404).json({ success: false, error: '项目不存在' });
     }
 
-    // Validate variant exists in the project
-    const availableVariants = gradleService.getVariants(project.path, moduleName);
-    const validVariant = availableVariants.find(v =>
-      v.toLowerCase() === variant.toLowerCase()
-    );
-    if (!validVariant) {
-      return res.status(400).json({
-        success: false,
-        error: `变体 "${variant}" 不存在，可用变体: ${availableVariants.join(', ')}`
-      });
-    }
+    let buildId;
+    if (project.type === 'flutter') {
+      // Flutter projects require env parameter
+      if (!env) {
+        return res.status(400).json({ success: false, error: 'Flutter 项目需要指定 env 参数' });
+      }
+      if (!/^[\w-]+$/.test(env)) {
+        return res.status(400).json({ success: false, error: 'env 参数格式无效' });
+      }
 
-    // Create build task (include branch and jdkVersion, use canonical variant casing)
-    const buildId = buildQueue.createBuild(projectName, branch, moduleName, validVariant, versionCode, versionName, validatedJdkVersion, useCache !== false);
+      // Validate variant using flutterBuildService
+      const availableVariants = flutterBuildService.getVariants(project.path, moduleName);
+      const validVariant = availableVariants.find(v =>
+        v.toLowerCase() === variant.toLowerCase()
+      );
+      if (!validVariant) {
+        return res.status(400).json({
+          success: false,
+          error: `变体 "${variant}" 不存在，可用变体: ${availableVariants.join(', ')}`
+        });
+      }
+
+      // Parse flavor+buildType from variant (e.g. "mainlandRelease" -> flavor="mainland", buildType="release")
+      const buildTypeMatch = validVariant.match(/(debug|release)$/i);
+      const buildType = buildTypeMatch ? buildTypeMatch[1].toLowerCase() : 'release';
+      const flavor = buildTypeMatch ? validVariant.substring(0, validVariant.length - buildTypeMatch[1].length) : validVariant;
+
+      buildId = buildQueue.createBuild(projectName, branch, moduleName, validVariant, versionCode, versionName, validatedJdkVersion, useCache !== false, env);
+
+      // Store parsed flavor and buildType on the build object for executeBuild
+      buildQueue.updateBuild(buildId, { flavor, buildType });
+    } else {
+      // Validate variant exists in the project
+      const availableVariants = gradleService.getVariants(project.path, moduleName);
+      const validVariant = availableVariants.find(v =>
+        v.toLowerCase() === variant.toLowerCase()
+      );
+      if (!validVariant) {
+        return res.status(400).json({
+          success: false,
+          error: `变体 "${variant}" 不存在，可用变体: ${availableVariants.join(', ')}`
+        });
+      }
+
+      // Create build task (include branch and jdkVersion, use canonical variant casing)
+      buildId = buildQueue.createBuild(projectName, branch, moduleName, validVariant, versionCode, versionName, validatedJdkVersion, useCache !== false, null);
+    }
 
     res.json({ success: true, buildId });
   } catch (error) {
@@ -408,7 +466,7 @@ router.delete('/apks/:filename', (req, res) => {
 });
 
 /**
- * GET /api/build-logs/:projectName - Get build log for a project
+ * GET /api/build-logs/:projectName - Get build log for a project (legacy)
  */
 router.get('/build-logs/:projectName', (req, res) => {
   try {
@@ -434,7 +492,7 @@ router.get('/build-logs/:projectName', (req, res) => {
 });
 
 /**
- * GET /api/build-logs/:projectName/poll - Poll new log content from disk (for real-time updates)
+ * GET /api/build-logs/:projectName/poll - Poll new log content from disk (for real-time updates, legacy)
  */
 router.get('/build-logs/:projectName/poll', (req, res) => {
   try {
@@ -448,6 +506,58 @@ router.get('/build-logs/:projectName/poll', (req, res) => {
     }
 
     const result = buildLogService.readLogFromOffset(decodedName, offset);
+    res.json({
+      success: true,
+      content: result.content,
+      totalSize: result.totalSize,
+      offset: result.offset,
+      eof: result.eof
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/build-logs/:projectName/:buildId - Get log for a specific build
+ */
+router.get('/build-logs/:projectName/:buildId', (req, res) => {
+  try {
+    const { projectName, buildId } = req.params;
+    const decodedName = decodeURIComponent(projectName);
+
+    const project = projectService.getProjectByName(decodedName);
+    if (!project) {
+      return res.status(404).json({ success: false, error: '项目不存在' });
+    }
+
+    const result = buildLogService.readBuildLog(decodedName, buildId);
+    res.json({
+      success: true,
+      content: result.content,
+      totalSize: result.totalSize,
+      trimmed: result.trimmed
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/build-logs/:projectName/:buildId/poll - Poll new log content for a specific build
+ */
+router.get('/build-logs/:projectName/:buildId/poll', (req, res) => {
+  try {
+    const { projectName, buildId } = req.params;
+    const decodedName = decodeURIComponent(projectName);
+    const offset = parseInt(req.query.offset, 10) || 0;
+
+    const project = projectService.getProjectByName(decodedName);
+    if (!project) {
+      return res.status(404).json({ success: false, error: '项目不存在' });
+    }
+
+    const result = buildLogService.readBuildLogFromOffset(decodedName, buildId, offset);
     res.json({
       success: true,
       content: result.content,

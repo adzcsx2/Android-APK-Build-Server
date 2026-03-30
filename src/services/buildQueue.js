@@ -38,7 +38,7 @@ function processQueue() {
 /**
  * Create a new build task
  */
-function createBuild(projectName, branch, moduleName, variant, versionCode, versionName, jdkVersion, useCache = true) {
+function createBuild(projectName, branch, moduleName, variant, versionCode, versionName, jdkVersion, useCache = true, env = null) {
   const buildId = uuidv4().substring(0, 8);
 
   const build = {
@@ -51,6 +51,7 @@ function createBuild(projectName, branch, moduleName, variant, versionCode, vers
     versionName,
     jdkVersion: jdkVersion ?? null,
     useCache: useCache,
+    env: env,
     status: 'pending',
     progress: 0,
     logs: [],
@@ -101,8 +102,8 @@ function addLog(buildId, log) {
       time: new Date().toISOString(),
       message: log
     });
-    // Also persist to disk
-    buildLogService.appendLog(build.projectName, buildId, log);
+    // Persist to per-build log file
+    buildLogService.appendBuildLog(build.projectName, buildId, log);
   }
 }
 
@@ -319,6 +320,7 @@ function getActiveBuilds() {
       variant: build.variant,
       versionCode: build.versionCode,
       versionName: build.versionName,
+      env: build.env,
       status: build.status,
       startTime: build.startTime,
       progress: build.progress

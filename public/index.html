@@ -62,6 +62,15 @@
             </select>
           </div>
         </div>
+        <div class="form-row hidden" id="env-row">
+          <div class="form-group">
+            <label>环境 (Env)</label>
+            <select id="env-select">
+              <option value="dev">dev</option>
+              <option value="prod">prod</option>
+            </select>
+          </div>
+        </div>
         <div class="form-row">
           <div class="form-group">
             <label>Version Code</label>
@@ -86,19 +95,13 @@
 
       <!-- Step 5: Build Progress -->
       <section class="step hidden" id="step-build">
-        <div class="section-header">
-          <h2>5. 构建进度</h2>
-          <div class="section-actions">
-            <button id="refresh-logs-btn" class="btn btn-secondary">刷新日志</button>
-            <button id="clear-logs-btn" class="btn btn-danger">清空日志</button>
-          </div>
-        </div>
+        <h2>5. 构建进度</h2>
         <div class="build-status" id="build-status">
           <span class="status-text">准备中...</span>
         </div>
         <div class="log-info" id="log-info"></div>
-        <div class="log-container">
-          <pre id="build-log">选择项目后加载日志</pre>
+        <div class="build-logs-container" id="build-logs-container">
+          <div class="loading">选择项目后加载日志</div>
         </div>
       </section>
 
@@ -110,6 +113,6 @@
     </main>
   </div>
 
-  <script src="/build/js/app.js?v=14"></script>
+  <script src="/build/js/app.js?v=16"></script>
 </body>
 </html>
