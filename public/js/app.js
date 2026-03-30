@@ -15,6 +15,7 @@ const state = {
   activeBuilds: [], // Store active builds for display
   recentBuilds: [], // Store recent completed/failed builds for current project
   cachedApks: [], // Cache APKs to avoid redundant API calls
+  currentProjects: [], // Current project list for change detection
   availableJdkVersions: [], // Cache available JDK versions
   buildLogItems: [], // Array of build log items (max 5)
   currentBuildLogId: null, // Currently expanded build log item
@@ -237,6 +238,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   Promise.all([projectsPromise, activeBuildsPromise]).then(([data]) => {
     if (data && data.success) {
+      state.currentProjects = data.projects;
       renderProjects(data.projects);
     } else {
       elements.projectList.innerHTML = `<div class="error">${data ? data.error : '加载失败'}</div>`;
@@ -368,6 +370,7 @@ async function loadProjects() {
     console.log('Data:', data);
 
     if (data.success) {
+      state.currentProjects = data.projects;
       renderProjects(data.projects);
     } else {
       elements.projectList.innerHTML = `<div class="error">${data.error}</div>`;
@@ -430,6 +433,14 @@ function renderProjects(projects) {
   document.querySelectorAll('.project-item').forEach(item => {
     item.addEventListener('click', () => selectProject(item.dataset.name, item.dataset.type));
   });
+
+  // Restore selection state if a project is currently selected
+  if (state.projectName) {
+    const selected = document.querySelector(`.project-item[data-name="${CSS.escape(state.projectName)}"]`);
+    if (selected) {
+      selected.classList.add('selected');
+    }
+  }
 }
 
 // Update project item build indicators without full re-render
@@ -458,8 +469,29 @@ function updateProjectBuildIndicators() {
   });
 }
 
+// Refresh project list in background, re-render only if list changed
+async function refreshProjectList() {
+  try {
+    const res = await fetch(`${API_BASE}/projects`);
+    const data = await res.json();
+    if (data.success && Array.isArray(data.projects)) {
+      const currentKey = (state.currentProjects || []).map(p => `${p.name}:${p.type}`).sort().join(',');
+      const newKey = data.projects.map(p => `${p.name}:${p.type}`).sort().join(',');
+      if (currentKey !== newKey) {
+        state.currentProjects = data.projects;
+        renderProjects(data.projects);
+      }
+    }
+  } catch (e) {
+    // silently ignore
+  }
+}
+
 // Select Project
 async function selectProject(name, type) {
+  // Refresh project list in background (server has 10s cache, so no heavy IO)
+  refreshProjectList();
+
   // Update UI
   document.querySelectorAll('.project-item').forEach(item => {
     item.classList.toggle('selected', item.dataset.name === name);

@@ -4,11 +4,11 @@ const path = require('path');
 const CONFIG_FILE = path.join(__dirname, '../../data/workplace-configs.json');
 const ROOT_CONFIG = path.join(__dirname, '../../config.json');
 
-// In-memory cache for project list to avoid repeated filesystem scans
+// In-memory cache: limit filesystem scans to at most once every 10 seconds
 const PROJECT_CACHE = {
   data: null,
   timestamp: 0,
-  ttl: 5000 // 5 seconds
+  ttl: 10000
 };
 
 /**
@@ -115,7 +115,7 @@ function scanPath(dirPath) {
 }
 
 /**
- * Get all Android projects from all configured paths (with cache)
+ * Get all Android projects from all configured paths (with 10s cache)
  */
 function getAllProjects() {
   const now = Date.now();
