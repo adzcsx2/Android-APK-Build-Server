@@ -94,6 +94,32 @@ const debouncedSaveConfig = debounce(async () => {
 }, 500);
 
 // ============================================
+// LOADING OVERLAY
+// ============================================
+
+/**
+ * Show loading overlay with text
+ */
+function showLoadingOverlay(text = '加载中...') {
+  const overlay = document.getElementById('loading-overlay');
+  const loadingText = document.getElementById('loading-text');
+  if (overlay) {
+    loadingText.textContent = text;
+    overlay.classList.remove('hidden');
+  }
+}
+
+/**
+ * Hide loading overlay
+ */
+function hideLoadingOverlay() {
+  const overlay = document.getElementById('loading-overlay');
+  if (overlay) {
+    overlay.classList.add('hidden');
+  }
+}
+
+// ============================================
 // CONFIG API FUNCTIONS (Server-side storage)
 // ============================================
 
@@ -199,6 +225,7 @@ const elements = {
   projectList: document.getElementById('project-list'),
   branchSelect: document.getElementById('branch-select'),
   fetchBranchesBtn: document.getElementById('fetch-branches-btn'),
+  checkoutBranchBtn: document.getElementById('checkout-branch-btn'),
   branchLog: document.getElementById('branch-log'),
   branchLogList: document.getElementById('branch-log-list'),
   syncBtn: document.getElementById('sync-btn'),
@@ -252,6 +279,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // Event Listeners
 function setupEventListeners() {
   elements.fetchBranchesBtn.addEventListener('click', fetchAllBranches);
+  elements.checkoutBranchBtn.addEventListener('click', performCheckout);
   elements.buildBtn.addEventListener('click', startBuild);
 
   // Module change - combines original handler with auto-save
@@ -261,7 +289,7 @@ function setupEventListeners() {
   });
 
   // Auto-save listeners for configuration fields
-  // Branch selection - immediate save and auto load modules
+  // Branch selection - only update state, show branch log, and reveal checkout button
   elements.branchSelect.addEventListener('change', async () => {
     state.branch = elements.branchSelect.value;
 
@@ -284,21 +312,21 @@ function setupEventListeners() {
         elements.jdkVersionSelect.innerHTML = '<option value="">使用默认</option>';
       }
       renderBranchLog([]);
+      updateCheckoutButton(null);
       return;
     }
 
     // Fetch and display branch log
     fetchBranchLog(state.projectName, state.branch);
 
-    // Immediately save config when branch changes
+    // Save config
     if (state.projectName && state.branch) {
       const config = getCurrentConfig();
       await saveProjectConfig(state.projectName, config);
-      console.log('Immediately saved config after branch selection');
-
-      // Auto load modules after branch selection (no sync needed)
-      await loadModules(state.savedConfig);
     }
+
+    // Show checkout button for both local and remote branches
+    updateCheckoutButton(state.branch);
   });
 
   elements.variantSelect.addEventListener('change', () => {
@@ -589,10 +617,17 @@ async function selectProject(name, type) {
         state.branch = savedBranch;
         console.log('Restored saved branch from cache:', savedBranch);
 
+        // Check if this is a remote branch
+        const selectedOption = elements.branchSelect.selectedOptions[0];
+        const isRemote = selectedOption && selectedOption.dataset.type === 'remote';
+
         // Fetch and display branch log for restored branch
         fetchBranchLog(name, savedBranch);
 
-        // Auto load modules after branch restore (no sync needed)
+        // Show checkout button (don't auto-checkout)
+        updateCheckoutButton(savedBranch);
+
+        // Load modules from whatever is currently on disk
         await loadModules(state.savedConfig);
       }
     }
@@ -632,7 +667,7 @@ function renderBranches(branches, currentBranch) {
     html += '<optgroup label="本地分支">';
     localBranches.forEach(b => {
       const selected = b.name === currentBranch ? 'selected' : '';
-      html += `<option value="${b.name}" ${selected}>${b.name}${b.current ? ' (当前)' : ''}</option>`;
+      html += `<option value="${b.name}" ${selected} data-type="local">${b.name}${b.current ? ' (当前)' : ''}</option>`;
     });
     html += '</optgroup>';
   }
@@ -640,7 +675,7 @@ function renderBranches(branches, currentBranch) {
   if (remoteBranches.length > 0) {
     html += '<optgroup label="远程分支">';
     remoteBranches.forEach(b => {
-      html += `<option value="${b.name}">${b.name}</option>`;
+      html += `<option value="${b.name}" data-type="remote">${b.name}</option>`;
     });
     html += '</optgroup>';
   }
@@ -684,14 +719,12 @@ async function fetchAllBranches() {
           // Immediately save config after branch restore
           const config = getCurrentConfig();
           await saveProjectConfig(state.projectName, config);
-          console.log('Immediately saved config after branch restore');
 
-          // Auto load modules after branch restore (same as manual selection)
-          try {
-            await loadModules(state.savedConfig);
-          } catch (error) {
-            console.error('Failed to load modules after branch restore:', error);
-          }
+          // Show checkout button (don't auto-checkout)
+          updateCheckoutButton(savedBranch);
+
+          // Load modules from whatever is currently on disk
+          await loadModules(state.savedConfig);
         }
       }
     } else {
@@ -702,6 +735,83 @@ async function fetchAllBranches() {
   } finally {
     elements.fetchBranchesBtn.disabled = false;
     elements.fetchBranchesBtn.textContent = '获取所有分支';
+  }
+}
+
+// Update the visibility of the "Checkout Branch" button
+function updateCheckoutButton(branchName) {
+  if (branchName && elements.checkoutBranchBtn) {
+    elements.checkoutBranchBtn.classList.remove('hidden');
+  } else if (elements.checkoutBranchBtn) {
+    elements.checkoutBranchBtn.classList.add('hidden');
+  }
+}
+
+// Perform branch checkout (called when user clicks "切换分支" button)
+// Automatically detects remote vs local branch
+async function performCheckout() {
+  const branch = state.branch;
+  if (!branch || !state.projectName) {
+    return;
+  }
+
+  // Determine if this is a remote branch
+  const selectedOption = elements.branchSelect.selectedOptions[0];
+  const isRemote = selectedOption && selectedOption.dataset.type === 'remote';
+
+  showLoadingOverlay('切换分支中...');
+  elements.checkoutBranchBtn.disabled = true;
+  elements.branchSelect.disabled = true;
+
+  try {
+    const checkoutRes = await fetch(`${API_BASE}/projects/${state.projectName}/git/checkout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ branch, isRemote })
+    });
+    const checkoutData = await checkoutRes.json();
+
+    if (!checkoutData.success) {
+      throw new Error(checkoutData.error || '切换分支失败');
+    }
+
+    showToast(`已切换到分支 ${branch}`, 'success');
+
+    // Refresh branch list to update "当前" marker
+    await refreshBranchListAfterSync();
+
+    // Load modules from the newly checked-out branch (force disk values)
+    await loadModules(null);
+  } catch (error) {
+    console.error('Branch checkout error:', error);
+    showToast(`切换分支失败: ${error.message}`, 'error');
+  } finally {
+    hideLoadingOverlay();
+    elements.checkoutBranchBtn.disabled = false;
+    elements.branchSelect.disabled = false;
+  }
+}
+
+// Refresh branch list after checkout (uses cached endpoint to avoid redundant git fetch)
+async function refreshBranchListAfterSync() {
+  try {
+    const res = await fetch(`${API_BASE}/projects/${state.projectName}/branches/cached`);
+    const data = await res.json();
+
+    if (data.success && data.cached) {
+      renderBranches(data.branches, data.currentBranch);
+
+      // Restore current branch selection
+      if (state.branch) {
+        const optionExists = Array.from(elements.branchSelect.options)
+          .some(opt => opt.value === state.branch);
+        if (optionExists) {
+          elements.branchSelect.value = state.branch;
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Failed to refresh branch list:', error);
   }
 }
 
@@ -788,8 +898,8 @@ async function syncRepository() {
     if (data.success) {
       elements.syncLog.textContent = data.logs.join('\n');
 
-      // Load modules with saved config
-      await loadModules(state.savedConfig);
+      // Load modules from checked-out branch (force disk values)
+      await loadModules(null);
     } else {
       elements.syncLog.textContent += `\n错误: ${data.error}`;
     }

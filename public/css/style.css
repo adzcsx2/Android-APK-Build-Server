@@ -1065,3 +1065,45 @@ header .nav-link:hover {
   background: #28a745;
   cursor: default;
 }
+
+/* Fetch Branches & Sync to Local Buttons */
+#fetch-branches-btn {
+  margin-top: 10px;
+}
+
+#checkout-branch-btn {
+  margin-top: 10px;
+  margin-left: 8px;
+}
+
+/* Loading Overlay */
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 10001;
+}
+
+.loading-spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-text {
+  color: #fff;
+  margin-top: 16px;
+  font-size: 1.1em;
+  font-weight: 500;
+}

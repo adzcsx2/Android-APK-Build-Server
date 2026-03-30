@@ -79,8 +79,8 @@ router.get('/projects/:name/branch-log', (req, res) => {
       return res.status(400).json({ success: false, error: '请指定分支' });
     }
 
-    // Validate branch name format (defense-in-depth)
-    if (!/^[a-zA-Z0-9_\-./#@]+$/.test(branch) || branch.length > 200) {
+    // Validate branch name format (prevent path traversal and control characters)
+    if (!branch || branch.length > 200 || /\.\./.test(branch) || /[\x00-\x1f\x7f]/.test(branch) || branch.endsWith('.lock') || branch.includes('\\')) {
       return res.status(400).json({ success: false, error: '分支名包含非法字符' });
     }
 
@@ -115,6 +115,39 @@ router.post('/projects/:name/git/sync', async (req, res) => {
 
     const result = await gitService.syncRepository(project.path, branch);
     res.json({ success: true, logs: result.logs });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/projects/:name/git/checkout - Checkout a branch (lightweight, no pull)
+ */
+router.post('/projects/:name/git/checkout', async (req, res) => {
+  try {
+    const { branch, isRemote } = req.body;
+    if (!branch) {
+      return res.status(400).json({ success: false, error: '请指定分支' });
+    }
+
+    // Validate branch name format (prevent path traversal and control characters)
+    if (!branch || branch.length > 200 || /\.\./.test(branch) || /[\x00-\x1f\x7f]/.test(branch) || branch.endsWith('.lock') || branch.includes('\\')) {
+      return res.status(400).json({ success: false, error: '分支名包含非法字符' });
+    }
+
+    const project = projectService.getProjectByName(req.params.name);
+    if (!project) {
+      return res.status(404).json({ success: false, error: '项目不存在' });
+    }
+
+    const result = await gitService.checkoutBranch(project.path, branch, isRemote === true);
+
+    // Update cached branches after checkout
+    const branches = gitService.getBranches(project.path);
+    const currentBranch = gitService.getCurrentBranch(project.path);
+    branchCacheService.saveCachedBranches(req.params.name, branches, currentBranch);
+
+    res.json({ success: true, wasRemote: result.wasRemote, currentBranch });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

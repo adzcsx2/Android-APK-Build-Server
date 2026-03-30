@@ -278,6 +278,79 @@ function syncForBuild(projectPath, branchName, onLog) {
 }
 
 /**
+ * Checkout a branch (without reset/clean/pull)
+ * For remote branches, creates a local tracking branch
+ * @param {string} projectPath - Path to project
+ * @param {string} branchName - Branch name to checkout
+ * @param {boolean} isRemote - Whether this is a remote branch
+ * @returns {Promise<{success: boolean, wasRemote: boolean, logs?: string[]}>}
+ */
+function checkoutBranch(projectPath, branchName, isRemote = false) {
+  return new Promise((resolve, reject) => {
+    // Validate branch name (prevent path traversal and control characters)
+    if (!branchName || branchName.length > 200 || /\.\./.test(branchName) || /[\x00-\x1f\x7f]/.test(branchName) || branchName.endsWith('.lock') || branchName.includes('\\')) {
+      reject(new Error('分支名无效'));
+      return;
+    }
+
+    const commands = [
+      { args: ['stash', '-u', '-m', 'auto-stash-before-checkout'], desc: '暂存本地修改...' },
+      { args: isRemote
+        ? ['checkout', '-b', branchName, `origin/${branchName}`]
+        : ['checkout', branchName],
+        desc: `切换到分支 ${branchName}...` }
+    ];
+
+    let currentIndex = 0;
+
+    function runNext() {
+      if (currentIndex >= commands.length) {
+        resolve({ success: true, wasRemote: isRemote });
+        return;
+      }
+
+      const { args, desc } = commands[currentIndex];
+      currentIndex++;
+
+      const proc = spawn('git', args, {
+        cwd: projectPath,
+        shell: true,
+        windowsHide: true
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      proc.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      proc.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      proc.on('close', (code) => {
+        // git stash may have nothing to stash (exit code 0 but "No local changes")
+        // git checkout may "fail" if already on branch
+        if (code !== 0 && currentIndex > 1) {
+          if (!stderr.includes('Already on') && !stdout.includes('Already on')) {
+            reject(new Error(`切换分支失败: ${stderr || stdout}`));
+            return;
+          }
+        }
+        runNext();
+      });
+
+      proc.on('error', (err) => {
+        reject(err);
+      });
+    }
+
+    runNext();
+  });
+}
+
+/**
  * Get recent commit logs for a branch
  * @param {string} projectPath - Path to the git repository
  * @param {string} branchName - Branch name to get logs for
@@ -328,5 +401,6 @@ module.exports = {
   getCurrentBranch,
   syncRepository,
   syncForBuild,
+  checkoutBranch,
   getBranchLog
 };

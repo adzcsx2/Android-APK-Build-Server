@@ -30,6 +30,7 @@
             <option value="">请选择分支</option>
           </select>
           <button id="fetch-branches-btn" class="btn btn-secondary">获取所有分支</button>
+          <button id="checkout-branch-btn" class="btn btn-primary hidden">切换分支</button>
         </div>
         <div class="branch-log hidden" id="branch-log">
           <div class="branch-log-title">最近提交记录</div>
@@ -113,6 +114,12 @@
     </main>
   </div>
 
-  <script src="/build/js/app.js?v=16"></script>
+  <!-- Loading Overlay -->
+  <div class="loading-overlay hidden" id="loading-overlay">
+    <div class="loading-spinner"></div>
+    <div class="loading-text" id="loading-text">加载中...</div>
+  </div>
+
+  <script src="/build/js/app.js?v=19"></script>
 </body>
 </html>
