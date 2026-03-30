@@ -57,6 +57,36 @@
         </div>
         <div id="save-status" class="status-message hidden"></div>
       </section>
+
+      <!-- JDK Configuration -->
+      <section class="step">
+        <h2>JDK 版本配置</h2>
+        <div class="jdk-add-form">
+          <div class="form-row">
+            <div class="form-group">
+              <label>名称</label>
+              <input type="text" id="jdk-name" placeholder="例如: JDK 17">
+            </div>
+            <div class="form-group">
+              <label>版本号</label>
+              <input type="number" id="jdk-version" placeholder="17" min="1" max="99">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>安装路径</label>
+            <input type="text" id="jdk-path" placeholder="例如: C:\Users\xxx\.jdks\ms-17.0.18">
+          </div>
+          <div class="jdk-actions">
+            <button id="validate-jdk-btn" class="btn btn-secondary">验证路径</button>
+            <button id="add-jdk-btn" class="btn btn-success">添加 JDK</button>
+          </div>
+        </div>
+        <div id="jdk-validate-status" class="status-message hidden"></div>
+        <div id="jdk-list" class="jdk-list">
+          <div class="loading">加载中...</div>
+        </div>
+        <div id="jdk-status" class="status-message hidden"></div>
+      </section>
     </main>
   </div>
 

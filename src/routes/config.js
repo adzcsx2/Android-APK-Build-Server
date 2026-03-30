@@ -6,6 +6,7 @@
 const express = require('express');
 const router = express.Router();
 const configService = require('../services/configService');
+const jdkService = require('../services/jdkService');
 const serverConfig = require('../../config.json');
 
 /**
@@ -129,28 +130,19 @@ router.delete('/config/:projectName', (req, res) => {
  */
 router.get('/jdk-versions', (req, res) => {
   try {
-    const jdkConfig = serverConfig.jdk || {};
-    const availableVersions = [];
-
-    const versionMap = {
-      'jdk8': 8,
-      'jdk11': 11,
-      'jdk17': 17,
-      'jdk21': 21
-    };
-
-    for (const [key, jdkPath] of Object.entries(jdkConfig)) {
-      if (jdkPath && typeof jdkPath === 'string' && jdkPath.trim() !== '') {
-        const version = versionMap[key];
-        if (version) {
-          availableVersions.push({ version, key, label: `Java ${version}` });
-        }
-      }
-    }
-
+    const jdks = jdkService.getAllJdks();
+    const defaultJdk = jdkService.getDefaultJdk();
+    const availableVersions = jdks.map(j => ({
+      version: j.version,
+      label: j.name
+    }));
     availableVersions.sort((a, b) => a.version - b.version);
 
-    res.json({ success: true, versions: availableVersions });
+    res.json({
+      success: true,
+      versions: availableVersions,
+      defaultVersion: defaultJdk ? defaultJdk.version : null
+    });
   } catch (error) {
     console.error('Failed to get JDK versions:', error);
     res.status(500).json({ success: false, error: 'Failed to get JDK versions' });

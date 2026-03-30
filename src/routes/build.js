@@ -6,6 +6,7 @@ const buildQueue = require('../services/buildQueue');
 const apkService = require('../services/apkService');
 const buildLogService = require('../services/buildLogService');
 const sse = require('../utils/sse');
+const jdkService = require('../services/jdkService');
 
 const router = express.Router();
 
@@ -158,12 +159,21 @@ router.post('/build', async (req, res) => {
     }
 
     // Validate jdkVersion if provided
-    const VALID_JDK_VERSIONS = [8, 11, 17, 21];
+    const availableVersions = jdkService.getAvailableVersions();
     let validatedJdkVersion = null;
     if (jdkVersion != null) {
       const parsed = parseInt(jdkVersion, 10);
-      if (isNaN(parsed) || !VALID_JDK_VERSIONS.includes(parsed)) {
-        return res.status(400).json({ success: false, error: '无效的 JDK 版本' });
+      if (availableVersions.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: '未配置任何 JDK 版本，请在设置页面添加 JDK'
+        });
+      }
+      if (isNaN(parsed) || !availableVersions.includes(parsed)) {
+        return res.status(400).json({
+          success: false,
+          error: '无效的 JDK 版本。可用版本: ' + availableVersions.join(', ')
+        });
       }
       validatedJdkVersion = parsed;
     }

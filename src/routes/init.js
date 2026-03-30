@@ -2,11 +2,20 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const workplaceService = require('../services/workplaceService');
+const jdkService = require('../services/jdkService');
 const config = require('../../config.json');
 
 const router = express.Router();
 
 const INIT_PASSWORD = config.initPassword || '1231231';
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function validateUuid(req, res, next) {
+  if (!UUID_REGEX.test(req.params.id)) {
+    return res.status(400).json({ success: false, error: '无效的 ID 格式' });
+  }
+  next();
+}
 
 // Serve static files for init page
 router.use('/css', express.static(path.join(__dirname, '../../public/css')));
@@ -108,6 +117,89 @@ router.delete('/api/workplaces/:index', (req, res) => {
     res.json({ success: true, message: '删除成功', paths });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/jdks - List all configured JDKs
+ */
+router.get('/api/jdks', (req, res) => {
+  try {
+    const jdks = jdkService.getAllJdks();
+    const defaultJdk = jdkService.getDefaultJdk();
+    res.json({
+      success: true,
+      jdks,
+      defaultId: defaultJdk ? defaultJdk.id : null
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/jdks/validate-path - Validate a JDK path before adding
+ */
+router.post('/api/jdks/validate-path', (req, res) => {
+  try {
+    const { jdkPath } = req.body;
+    const result = jdkService.validateJdkPath(jdkPath);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ valid: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/jdks - Add a new JDK
+ */
+router.post('/api/jdks', (req, res) => {
+  try {
+    const { name, version, jdkPath } = req.body;
+    const jdk = jdkService.addJdk({ name, version, jdkPath });
+    res.json({ success: true, jdk });
+  } catch (error) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * PUT /api/jdks/:id - Update an existing JDK
+ */
+router.put('/api/jdks/:id', validateUuid, (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, version, jdkPath } = req.body;
+    const jdk = jdkService.updateJdk(id, { name, version, jdkPath });
+    res.json({ success: true, jdk });
+  } catch (error) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * DELETE /api/jdks/:id - Delete a JDK
+ */
+router.delete('/api/jdks/:id', validateUuid, (req, res) => {
+  try {
+    const { id } = req.params;
+    jdkService.deleteJdk(id);
+    res.json({ success: true, message: '删除成功' });
+  } catch (error) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * PUT /api/jdks/:id/default - Set a JDK as default
+ */
+router.put('/api/jdks/:id/default', validateUuid, (req, res) => {
+  try {
+    const { id } = req.params;
+    jdkService.setDefaultJdk(id);
+    res.json({ success: true, message: '已设为默认' });
+  } catch (error) {
+    res.status(400).json({ success: false, error: error.message });
   }
 });
 

@@ -145,8 +145,8 @@ async function saveProjectConfig(projectName, config) {
 /**
  * Load available JDK versions from server
  */
-async function loadJdkVersions() {
-  if (state.availableJdkVersions.length > 0) {
+async function loadJdkVersions(forceRefresh) {
+  if (!forceRefresh && state.availableJdkVersions.length > 0) {
     return state.availableJdkVersions;
   }
 
@@ -156,6 +156,7 @@ async function loadJdkVersions() {
 
     if (data.success && data.versions) {
       state.availableJdkVersions = data.versions;
+      state.defaultJdkVersion = data.defaultVersion || null;
       return data.versions;
     }
     console.error('Failed to load JDK versions:', data.error);
@@ -169,16 +170,26 @@ async function loadJdkVersions() {
 /**
  * Render JDK version dropdown
  */
-function renderJdkVersions(versions, savedVersion) {
-  let html = '<option value="">使用默认</option>';
+function renderJdkVersions(versions, savedVersion, defaultVersion) {
+  let html = '';
 
   versions.forEach(v => {
-    const selected = savedVersion != null && v.version === savedVersion ? 'selected' : '';
-    html += `<option value="${v.version}" ${selected}>${v.label}</option>`;
+    const isDefault = v.version === defaultVersion;
+    let selected = false;
+    if (savedVersion != null) {
+      selected = v.version === savedVersion;
+    } else if (isDefault) {
+      selected = true;
+    }
+    html += `<option value="${v.version}" ${selected ? 'selected' : ''}>${v.label}</option>`;
   });
 
   if (elements.jdkVersionSelect) {
     elements.jdkVersionSelect.innerHTML = html;
+    // If no saved version and no selection made, set state to default
+    if (savedVersion == null && defaultVersion != null) {
+      state.jdkVersion = defaultVersion;
+    }
   }
 }
 
@@ -830,8 +841,9 @@ async function onModuleChange(savedConfig = null) {
     ? state.availableJdkVersions
     : await loadJdkVersions();
   const savedJdkVersion = savedConfig?.jdkVersion != null ? savedConfig.jdkVersion : null;
-  renderJdkVersions(versions, savedJdkVersion);
-  state.jdkVersion = savedJdkVersion;
+  const defaultJdkVersion = state.defaultJdkVersion || null;
+  renderJdkVersions(versions, savedJdkVersion, defaultJdkVersion);
+  state.jdkVersion = savedJdkVersion != null ? savedJdkVersion : defaultJdkVersion;
 
   // Restore useCache checkbox state
   if (savedConfig && savedConfig.useCache !== undefined) {

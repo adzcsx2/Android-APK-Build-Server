@@ -3,6 +3,7 @@ const path = require('path');
 const { spawn, execSync } = require('child_process');
 const config = require('../../config.json');
 const gitService = require('./gitService');
+const jdkService = require('./jdkService');
 
 /**
  * Get modules from settings.gradle or settings.gradle.kts
@@ -378,13 +379,22 @@ function updateVersion(projectPath, moduleName, versionCode, versionName, onLog)
  * Get JDK path for project
  */
 function getJdkPath(projectName, explicitVersion) {
-  const validVersions = [8, 11, 17, 21];
-  let jdkVersion = explicitVersion;
-  if (jdkVersion == null || !validVersions.includes(jdkVersion)) {
-    jdkVersion = config.projectJdk?.[projectName] || 17;
+  // If explicit version provided, try to find matching JDK
+  if (explicitVersion != null) {
+    const jdk = jdkService.getJdkByVersion(explicitVersion);
+    if (jdk) return jdk.path;
   }
-  const jdkKey = `jdk${jdkVersion}`;
-  return config.jdk?.[jdkKey] || config.jdk?.jdk11;
+
+  // Try project-specific default from config.json projectJdk
+  const projectDefaultVersion = config.projectJdk?.[projectName];
+  if (projectDefaultVersion != null) {
+    const jdk = jdkService.getJdkByVersion(projectDefaultVersion);
+    if (jdk) return jdk.path;
+  }
+
+  // Fall back to global default JDK
+  const defaultJdk = jdkService.getDefaultJdk();
+  return defaultJdk ? defaultJdk.path : null;
 }
 
 /**

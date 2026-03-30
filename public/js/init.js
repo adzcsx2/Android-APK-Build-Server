@@ -2,6 +2,8 @@
   let configuredPaths = [];
   let lastScannedPath = '';
   let verified = false;
+  let configuredJdks = [];
+  let defaultJdkId = null;
 
   const passwordOverlay = document.getElementById('password-overlay');
   const passwordInput = document.getElementById('password-input');
@@ -16,6 +18,16 @@
   const projectPreview = document.getElementById('project-preview');
   const pathList = document.getElementById('path-list');
   const saveStatus = document.getElementById('save-status');
+
+  // JDK elements
+  const jdkNameInput = document.getElementById('jdk-name');
+  const jdkVersionInput = document.getElementById('jdk-version');
+  const jdkPathInput = document.getElementById('jdk-path');
+  const validateJdkBtn = document.getElementById('validate-jdk-btn');
+  const addJdkBtn = document.getElementById('add-jdk-btn');
+  const jdkValidateStatus = document.getElementById('jdk-validate-status');
+  const jdkList = document.getElementById('jdk-list');
+  const jdkStatus = document.getElementById('jdk-status');
 
   // Password verification
   passwordBtn.addEventListener('click', verifyPassword);
@@ -47,6 +59,7 @@
         passwordOverlay.classList.add('hidden');
         mainContent.classList.remove('hidden');
         loadPaths();
+        loadJdks();
       } else {
         showStatus(passwordError, data.error || '密码错误', 'error');
         passwordInput.select();
@@ -201,6 +214,180 @@
         '<button class="btn btn-danger btn-remove" data-index="' + i + '">移除</button>' +
       '</div>'
     ).join('');
+  }
+
+  // ========================
+  // JDK Management
+  // ========================
+
+  // Validate JDK path
+  validateJdkBtn.addEventListener('click', async () => {
+    const jdkPath = jdkPathInput.value.trim();
+    if (!jdkPath) {
+      showStatus(jdkValidateStatus, '请输入 JDK 路径', 'error');
+      return;
+    }
+
+    validateJdkBtn.disabled = true;
+    validateJdkBtn.textContent = '验证中...';
+
+    try {
+      const res = await fetch('/init/api/jdks/validate-path', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jdkPath })
+      });
+      const data = await res.json();
+
+      if (data.valid) {
+        showStatus(jdkValidateStatus, '路径验证通过', 'success');
+      } else {
+        showStatus(jdkValidateStatus, data.error || '路径验证失败', 'error');
+      }
+    } catch (err) {
+      showStatus(jdkValidateStatus, '验证失败: ' + err.message, 'error');
+    } finally {
+      validateJdkBtn.disabled = false;
+      validateJdkBtn.textContent = '验证路径';
+    }
+  });
+
+  // Add JDK
+  addJdkBtn.addEventListener('click', async () => {
+    const name = jdkNameInput.value.trim();
+    const version = jdkVersionInput.value.trim();
+    const jdkPath = jdkPathInput.value.trim();
+
+    if (!name || !version || !jdkPath) {
+      showStatus(jdkStatus, '请填写所有字段', 'error');
+      return;
+    }
+
+    addJdkBtn.disabled = true;
+    addJdkBtn.textContent = '添加中...';
+    hideStatus(jdkStatus);
+
+    try {
+      const res = await fetch('/init/api/jdks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, version, jdkPath })
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        showStatus(jdkStatus, '添加成功', 'success');
+        jdkNameInput.value = '';
+        jdkVersionInput.value = '';
+        jdkPathInput.value = '';
+        hideStatus(jdkValidateStatus);
+        await loadJdks();
+      } else {
+        showStatus(jdkStatus, data.error || '添加失败', 'error');
+      }
+    } catch (err) {
+      showStatus(jdkStatus, '添加失败: ' + err.message, 'error');
+    } finally {
+      addJdkBtn.disabled = false;
+      addJdkBtn.textContent = '添加 JDK';
+    }
+  });
+
+  // JDK list click handler (delete + set default)
+  jdkList.addEventListener('click', async (e) => {
+    const deleteBtn = e.target.closest('.btn-jdk-delete');
+    const defaultBtn = e.target.closest('.btn-jdk-default');
+
+    if (deleteBtn) {
+      const id = deleteBtn.dataset.id;
+      const jdk = configuredJdks.find(j => j.id === id);
+      if (!jdk) return;
+
+      if (!confirm('确定要删除 ' + jdk.name + ' 吗？')) return;
+
+      deleteBtn.disabled = true;
+      deleteBtn.textContent = '删除中...';
+
+      try {
+        const res = await fetch('/init/api/jdks/' + id, { method: 'DELETE' });
+        const data = await res.json();
+
+        if (data.success) {
+          showStatus(jdkStatus, '删除成功', 'success');
+          await loadJdks();
+        } else {
+          showStatus(jdkStatus, data.error || '删除失败', 'error');
+        }
+      } catch (err) {
+        showStatus(jdkStatus, '删除失败: ' + err.message, 'error');
+      } finally {
+        await loadJdks();
+      }
+    }
+
+    if (defaultBtn) {
+      const id = defaultBtn.dataset.id;
+      if (id === defaultJdkId) return;
+
+      defaultBtn.disabled = true;
+      defaultBtn.textContent = '设置中...';
+
+      try {
+        const res = await fetch('/init/api/jdks/' + id + '/default', { method: 'PUT' });
+        const data = await res.json();
+
+        if (data.success) {
+          showStatus(jdkStatus, '已设为默认', 'success');
+          await loadJdks();
+        } else {
+          showStatus(jdkStatus, data.error || '设置失败', 'error');
+        }
+      } catch (err) {
+        showStatus(jdkStatus, '设置失败: ' + err.message, 'error');
+      } finally {
+        await loadJdks();
+      }
+    }
+  });
+
+  async function loadJdks() {
+    try {
+      const res = await fetch('/init/api/jdks');
+      const data = await res.json();
+
+      if (data.success) {
+        configuredJdks = data.jdks || [];
+        defaultJdkId = data.defaultId || null;
+        renderJdkList();
+      }
+    } catch (err) {
+      jdkList.innerHTML = '<div class="status-message error">加载失败: ' + err.message + '</div>';
+    }
+  }
+
+  function renderJdkList() {
+    if (configuredJdks.length === 0) {
+      jdkList.innerHTML = '<div class="empty-message">暂无 JDK 配置，请添加</div>';
+      return;
+    }
+
+    jdkList.innerHTML = configuredJdks.map(jdk => {
+      const isDefault = jdk.id === defaultJdkId;
+      const defaultBtnClass = isDefault ? 'btn btn-default is-active' : 'btn btn-default';
+      const defaultBtnText = isDefault ? '当前默认' : '设为默认';
+
+      return '<div class="jdk-item' + (isDefault ? ' is-default' : '') + '">' +
+        '<div class="jdk-info">' +
+          '<div class="jdk-name">' + escapeHtml(jdk.name) + '</div>' +
+          '<div class="jdk-version">版本: ' + jdk.version + '</div>' +
+          '<div class="jdk-path-text">' + escapeHtml(jdk.path) + '</div>' +
+        '</div>' +
+        '<div class="jdk-actions">' +
+          '<button class="' + defaultBtnClass + ' btn-jdk-default" data-id="' + jdk.id + '"' + (isDefault ? ' disabled' : '') + '>' + defaultBtnText + '</button>' +
+          '<button class="btn btn-danger btn-jdk-delete" data-id="' + jdk.id + '">删除</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
   }
 
   function showStatus(el, message, type) {

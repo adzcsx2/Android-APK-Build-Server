@@ -978,3 +978,90 @@ header .nav-link:hover {
   margin-top: 12px;
   margin-bottom: 0;
 }
+
+/* Init Page - JDK Configuration */
+.jdk-add-form {
+  margin-bottom: 20px;
+}
+
+.jdk-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.jdk-actions .btn {
+  margin-top: 0;
+}
+
+.jdk-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 15px;
+}
+
+.jdk-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 15px;
+  background: #f8f9fa;
+  border-radius: 6px;
+  border: 2px solid #e9ecef;
+  transition: border-color 0.2s ease;
+}
+
+.jdk-item.is-default {
+  border-color: #28a745;
+  background: #f0fff4;
+}
+
+.jdk-item .jdk-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.jdk-item .jdk-name {
+  font-weight: 600;
+  color: #333;
+}
+
+.jdk-item .jdk-version {
+  font-size: 0.85em;
+  color: #888;
+  margin-top: 2px;
+}
+
+.jdk-item .jdk-path-text {
+  font-size: 0.85em;
+  color: #888;
+  font-family: 'Consolas', 'Monaco', monospace;
+  margin-top: 4px;
+  word-break: break-all;
+}
+
+.jdk-item .jdk-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-left: 15px;
+}
+
+.jdk-item .jdk-actions .btn {
+  padding: 6px 14px;
+  font-size: 0.85em;
+}
+
+.btn-default {
+  background: #17a2b8;
+  color: white;
+}
+
+.btn-default:hover {
+  background: #138496;
+}
+
+.btn-default.is-active {
+  background: #28a745;
+  cursor: default;
+}

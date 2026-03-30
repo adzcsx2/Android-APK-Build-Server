@@ -90,3 +90,6 @@ app.listen(port, host, () => {
 
 // Start build history cleanup scheduler (keep max N records per project)
 require('./src/services/buildHistoryService').startCleanupScheduler();
+
+// Ensure JDK config file exists and migrate from config.json if needed
+require('./src/services/jdkService').ensureConfigFileExists();
