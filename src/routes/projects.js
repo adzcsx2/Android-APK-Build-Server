@@ -2,6 +2,7 @@ const express = require('express');
 const projectService = require('../services/projectService');
 const gitService = require('../services/gitService');
 const gradleService = require('../services/gradleService');
+const flutterBuildService = require('../services/flutterBuildService');
 const branchCacheService = require('../services/branchCacheService');
 
 const router = express.Router();
@@ -129,7 +130,9 @@ router.get('/projects/:name/modules', (req, res) => {
       return res.status(404).json({ success: false, error: '项目不存在' });
     }
 
-    const modules = gradleService.getModules(project.path);
+    const modules = project.type === 'flutter'
+      ? flutterBuildService.getModules(project.path)
+      : gradleService.getModules(project.path);
     res.json({ success: true, modules });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -146,7 +149,9 @@ router.get('/projects/:name/modules/:module/variants', (req, res) => {
       return res.status(404).json({ success: false, error: '项目不存在' });
     }
 
-    const variants = gradleService.getVariants(project.path, req.params.module);
+    const variants = project.type === 'flutter'
+      ? flutterBuildService.getVariants(project.path, req.params.module)
+      : gradleService.getVariants(project.path, req.params.module);
     res.json({ success: true, variants });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -163,7 +168,9 @@ router.get('/projects/:name/modules/:module/version', (req, res) => {
       return res.status(404).json({ success: false, error: '项目不存在' });
     }
 
-    const version = gradleService.getVersion(project.path, req.params.module);
+    const version = project.type === 'flutter'
+      ? flutterBuildService.getVersion(project.path)
+      : gradleService.getVersion(project.path, req.params.module);
     res.json({ success: true, version });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
