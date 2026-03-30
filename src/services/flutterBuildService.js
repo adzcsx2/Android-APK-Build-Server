@@ -283,16 +283,16 @@ function runBuild(projectPath, branch, flavor, buildType, env, versionCode, vers
       }
 
       // Step 5: Run build_runner to generate config.gen.dart (if needed)
+      const isWindows = process.platform === 'win32';
+      const flutterCmd = config.flutterSdk
+        ? path.join(config.flutterSdk, 'bin', isWindows ? 'flutter.bat' : 'flutter')
+        : 'flutter';
+
       const configGenPath = path.join(projectPath, 'lib', 'config', 'config.gen.dart');
       if (!fs.existsSync(configGenPath)) {
         onLog('[BUILD] ========================================');
         onLog('[BUILD] config.gen.dart not found, running build_runner...');
         onLog('[BUILD] ========================================');
-
-        const isWindows = process.platform === 'win32';
-        const flutterCmd = config.flutterSdk
-          ? path.join(config.flutterSdk, 'bin', isWindows ? 'flutter.bat' : 'flutter')
-          : 'flutter';
 
         const runnerArgs = ['pub', 'run', 'build_runner', 'build', '--delete-conflicting-outputs'];
         const buildRunnerResult = await spawnAsync(flutterCmd, runnerArgs, projectPath, buildEnv, onLog);
