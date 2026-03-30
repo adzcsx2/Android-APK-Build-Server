@@ -88,8 +88,5 @@ app.listen(port, host, () => {
   console.log('');
 });
 
-// Start APK cleanup scheduler
-require('./src/services/apkService').startCleanupScheduler();
-
-// Start build history cleanup scheduler (3-day retention)
+// Start build history cleanup scheduler (keep max N records per project)
 require('./src/services/buildHistoryService').startCleanupScheduler();

@@ -1,8 +1,10 @@
 const fs = require('fs');
 const path = require('path');
+const config = require('../../config.json');
+const apkService = require('./apkService');
 
 const HISTORY_FILE = path.join(__dirname, '../../data/build-history.json');
-const RETENTION_DAYS = 3;
+const MAX_RECORDS_PER_PROJECT = (config.apk && config.apk.maxRecordsPerProject) || 5;
 
 /**
  * Ensure history file exists
@@ -47,6 +49,7 @@ function saveHistory(history) {
 
 /**
  * Add a completed build record to history
+ * Triggers cleanup after adding to enforce max records per project
  * @param {Object} build - Build object from buildQueue
  */
 function addBuildRecord(build) {
@@ -68,6 +71,10 @@ function addBuildRecord(build) {
   };
   history.push(record);
   saveHistory(history);
+
+  // Cleanup after adding to enforce max records per project
+  cleanupOldRecords();
+
   return record;
 }
 
@@ -82,6 +89,14 @@ function deleteBuildRecord(buildId) {
   if (index === -1) {
     return false;
   }
+
+  // Delete associated APK file if exists
+  const record = history[index];
+  if (record && record.apkUrl) {
+    const filename = record.apkUrl.split('/').pop();
+    apkService.deleteApk(filename);
+  }
+
   history.splice(index, 1);
   saveHistory(history);
   return true;
@@ -101,29 +116,60 @@ function getAllHistory() {
 }
 
 /**
- * Cleanup records older than retention days (individual cleanup, not bulk)
- * Only removes records whose endTime is older than the threshold
+ * Cleanup old build records, keeping only the newest MAX_RECORDS_PER_PROJECT per project.
+ * If old records have associated APK files, those files are also deleted.
  * @returns {number} - Number of records removed
  */
 function cleanupOldRecords() {
   const history = loadHistory();
-  const cutoff = Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000;
   const before = history.length;
 
-  // Filter out records older than retention period
-  const remaining = history.filter(build => {
-    // Keep if no endTime (shouldn't happen, but safety check)
-    if (!build.endTime) return true;
-    const endTime = new Date(build.endTime).getTime();
-    return endTime > cutoff;
-  });
-
-  const removed = before - remaining.length;
-  if (removed > 0) {
-    saveHistory(remaining);
-    console.log(`[BuildHistory] Cleaned up ${removed} record(s) older than ${RETENTION_DAYS} days`);
+  // Group records by projectName
+  const grouped = {};
+  for (const record of history) {
+    const key = record.projectName || 'unknown';
+    if (!grouped[key]) {
+      grouped[key] = [];
+    }
+    grouped[key].push(record);
   }
-  return removed;
+
+  const toRemove = new Set();
+
+  for (const [project, records] of Object.entries(grouped)) {
+    // Sort by startTime descending (newest first)
+    records.sort((a, b) => {
+      const ta = a.startTime ? new Date(a.startTime).getTime() : 0;
+      const tb = b.startTime ? new Date(b.startTime).getTime() : 0;
+      return tb - ta;
+    });
+
+    // Keep only the newest MAX_RECORDS_PER_PROJECT records
+    if (records.length > MAX_RECORDS_PER_PROJECT) {
+      const excess = records.slice(MAX_RECORDS_PER_PROJECT);
+      for (const record of excess) {
+        toRemove.add(record.id);
+        // Delete associated APK file if exists
+        if (record.apkUrl) {
+          const filename = record.apkUrl.split('/').pop();
+          try {
+            apkService.deleteApk(filename);
+            console.log(`[BuildHistory] Deleted APK: ${filename}`);
+          } catch (err) {
+            console.error(`[BuildHistory] Failed to delete APK ${filename}:`, err.message);
+          }
+        }
+      }
+    }
+  }
+
+  if (toRemove.size > 0) {
+    const remaining = history.filter(b => !toRemove.has(b.id));
+    saveHistory(remaining);
+    console.log(`[BuildHistory] Cleaned up ${toRemove.size} record(s), keeping max ${MAX_RECORDS_PER_PROJECT} per project`);
+  }
+
+  return toRemove.size;
 }
 
 /**

@@ -75,71 +75,9 @@ function deleteApk(filename) {
   return false;
 }
 
-/**
- * Clean up old APKs
- */
-function cleanupOldApks() {
-  const retentionDays = config.apk.retentionDays || 3;
-  const now = Date.now();
-  const maxAge = retentionDays * 24 * 60 * 60 * 1000;
-
-  const apks = listApks();
-  let deleted = 0;
-
-  for (const apk of apks) {
-    const age = now - apk.created.getTime();
-    if (age > maxAge) {
-      try {
-        deleteApk(apk.filename);
-        deleted++;
-        console.log(`[APK Cleanup] Deleted: ${apk.filename}`);
-      } catch (err) {
-        console.error(`[APK Cleanup] Failed to delete ${apk.filename}:`, err.message);
-      }
-    }
-  }
-
-  console.log(`[APK Cleanup] Completed. Deleted ${deleted} APKs older than ${retentionDays} days.`);
-  return deleted;
-}
-
-/**
- * Start cleanup scheduler
- */
-function startCleanupScheduler() {
-  const cleanupTime = config.apk.cleanupTime || '02:00';
-  const [hours, minutes] = cleanupTime.split(':').map(Number);
-
-  // Calculate next cleanup time
-  function scheduleNext() {
-    const now = new Date();
-    let next = new Date();
-    next.setHours(hours, minutes, 0, 0);
-
-    if (next <= now) {
-      next.setDate(next.getDate() + 1);
-    }
-
-    const delay = next - now;
-    console.log(`[APK Cleanup] Next cleanup scheduled at: ${next.toLocaleString()}`);
-
-    setTimeout(() => {
-      cleanupOldApks();
-      scheduleNext();
-    }, delay);
-  }
-
-  scheduleNext();
-
-  // Also run cleanup on startup
-  setTimeout(() => cleanupOldApks(), 5000);
-}
-
 module.exports = {
   generateFilename,
   copyApk,
   listApks,
-  deleteApk,
-  cleanupOldApks,
-  startCleanupScheduler
+  deleteApk
 };

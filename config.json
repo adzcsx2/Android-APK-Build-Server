@@ -8,6 +8,7 @@
     "path": "D:\\AndroidWorkplace"
   },
   "androidSdk": "C:\\Users\\36988\\AppData\\Local\\Android\\Sdk",
+  "flutterSdk": "C:\\Users\\36988\\flutter",
   "pythonPath": "C:\\Python314",
   "jdk": {
     "jdk8": null,
@@ -17,8 +18,7 @@
   },
   "apk": {
     "outputDir": "D:\\WebWorkplace\\apk",
-    "retentionDays": 3,
-    "cleanupTime": "02:00"
+    "maxRecordsPerProject": 5
   },
   "build": {
     "maxConcurrent": 3,
