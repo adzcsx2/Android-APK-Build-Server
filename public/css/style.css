@@ -571,6 +571,13 @@ select:focus, input:focus {
   max-width: 300px;
 }
 
+.toast-notification.toast-with-action {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 420px;
+}
+
 .toast-success {
   background: #28a745;
 }
@@ -586,6 +593,24 @@ select:focus, input:focus {
 
 .toast-info {
   background: #17a2b8;
+}
+
+.toast-action-btn {
+  flex-shrink: 0;
+  padding: 6px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease;
+  white-space: nowrap;
+}
+
+.toast-action-btn:hover {
+  background: rgba(255, 255, 255, 0.35);
 }
 
 @keyframes slideIn {

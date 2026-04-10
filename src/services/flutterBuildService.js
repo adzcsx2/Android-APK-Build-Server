@@ -251,7 +251,7 @@ function updateVersion(projectPath, versionCode, versionName, onLog) {
 /**
  * Run Flutter build with real-time output
  */
-function runBuild(projectPath, branch, flavor, buildType, env, versionCode, versionName, jdkVersion, onLog, onProcessCreated, isCancelled) {
+function runBuild(projectPath, branch, flavor, buildType, env, versionCode, versionName, jdkVersion, useCache, onLog, onProcessCreated, isCancelled) {
   return new Promise(async (resolve, reject) => {
     const logs = [];
 
@@ -322,12 +322,32 @@ function runBuild(projectPath, branch, flavor, buildType, env, versionCode, vers
         buildEnv.ANDROID_SDK_ROOT = config.androidSdk;
       }
 
-      // Step 5: Run flutter pub get to ensure dependencies are up to date after git sync
+      // Step 4.5: Clean build cache when useCache is false
       const isWindows = process.platform === 'win32';
       const flutterCmd = config.flutterSdk
         ? path.join(config.flutterSdk, 'bin', isWindows ? 'flutter.bat' : 'flutter')
         : 'flutter';
 
+      if (useCache === false) {
+        onLog('[BUILD] ========================================');
+        onLog('[BUILD] Skipping cache (useCache=false), running flutter clean...');
+        onLog('[BUILD] ========================================');
+
+        const cleanResult = await spawnAsync(flutterCmd, ['clean'], projectPath, buildEnv, onLog);
+
+        if (isCancelled && isCancelled()) {
+          onLog('[BUILD] Build cancelled after clean');
+          return reject(new Error('Build cancelled'));
+        }
+
+        if (cleanResult !== 0) {
+          onLog('[BUILD] flutter clean failed, continuing anyway...');
+        } else {
+          onLog('[BUILD] flutter clean completed successfully');
+        }
+      }
+
+      // Step 5: Run flutter pub get to ensure dependencies are up to date after git sync
       onLog('[BUILD] ========================================');
       onLog('[BUILD] Running flutter pub get...');
       onLog('[BUILD] ========================================');

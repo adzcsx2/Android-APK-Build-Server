@@ -19,7 +19,9 @@ const state = {
   availableJdkVersions: [], // Cache available JDK versions
   buildLogItems: [], // Array of build log items (max 5)
   currentBuildLogId: null, // Currently expanded build log item
-  buildLogOffsets: {} // Track polling offset per build ID
+  buildLogOffsets: {}, // Track polling offset per build ID
+  currentBuildUseCache: null, // Whether the current build was started with useCache=true
+  isCacheRetry: false // Whether current build is a cache-retry (no second retry)
 };
 
 // Interval ID for active builds refresh (for cleanup)
@@ -533,6 +535,8 @@ async function selectProject(name, type) {
   state.jdkVersion = null;
   state.env = null;
   state.buildId = null;
+  state.currentBuildUseCache = null;
+  state.isCacheRetry = false;
 
   // Clear branch log when switching projects
   renderBranchLog([]);
@@ -550,6 +554,9 @@ async function selectProject(name, type) {
     currentEventSource.close();
     currentEventSource = null;
   }
+  // Dismiss any pending retry toast
+  const existingToast = document.querySelector('.toast-notification');
+  if (existingToast) existingToast.remove();
   stopLogPolling();
   state.buildLogOffsets = {};
   state.currentBuildLogId = null;
@@ -1128,6 +1135,10 @@ async function startBuild() {
   elements.buildBtn.disabled = true;
   elements.buildBtn.textContent = '提交中...';
 
+  // Track whether this build uses cache for retry logic
+  state.currentBuildUseCache = state.useCache;
+  state.isCacheRetry = false;
+
   try {
     // Create build
     const res = await fetch(`${API_BASE}/build`, {
@@ -1187,6 +1198,72 @@ async function startBuild() {
     alert(`构建失败: ${error.message}`);
     elements.buildBtn.disabled = false;
     elements.buildBtn.textContent = '开始构建';
+  }
+}
+
+/**
+ * Retry the last failed build without cache.
+ * Does not change button state — keeps it in "building" mode.
+ */
+async function retryBuildWithoutCache() {
+  // Mark as cache retry so second failure won't offer retry again
+  state.isCacheRetry = true;
+  state.currentBuildUseCache = false;
+
+  // Keep button disabled during retry
+  elements.buildBtn.disabled = true;
+  elements.buildBtn.textContent = '无缓存重试中...';
+
+  try {
+    const res = await fetch(`${API_BASE}/build`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        projectName: state.projectName,
+        branch: state.branch,
+        moduleName: state.moduleName,
+        variant: state.variant,
+        versionCode: state.versionCode,
+        versionName: state.versionName,
+        jdkVersion: state.jdkVersion,
+        useCache: false,
+        env: state.projectType === 'flutter' ? state.env : undefined
+      })
+    });
+
+    const data = await res.json();
+
+    if (data.success) {
+      state.buildId = data.buildId;
+      elements.buildLogsContainer.innerHTML = '';
+
+      const buildInfo = {
+        id: data.buildId,
+        projectName: state.projectName,
+        moduleName: state.moduleName,
+        variant: state.variant,
+        versionCode: state.versionCode,
+        versionName: state.versionName,
+        env: state.env,
+        status: 'pending',
+        startTime: new Date().toISOString(),
+        progress: 0
+      };
+
+      connectBuildLogs(data.buildId, buildInfo);
+
+      loadActiveBuilds().then(() => {
+        updateBuildButtonState();
+      });
+    } else {
+      showToast(`重试构建失败: ${data.error}`, 'error');
+      state.isCacheRetry = false;
+      updateBuildButtonState();
+    }
+  } catch (error) {
+    showToast(`重试构建失败: ${error.message}`, 'error');
+    state.isCacheRetry = false;
+    updateBuildButtonState();
   }
 }
 
@@ -1273,6 +1350,8 @@ function connectBuildLogs(buildId, initialBuildInfo) {
     elements.buildStatus.querySelector('.status-text').textContent = '构建成功!';
 
     state.buildId = null;
+    state.currentBuildUseCache = null;
+    state.isCacheRetry = false;
 
     // Stop polling
     stopLogPolling();
@@ -1296,6 +1375,8 @@ function connectBuildLogs(buildId, initialBuildInfo) {
       eventSource.close();
       currentEventSource = null;
       state.buildId = null;
+      state.currentBuildUseCache = null;
+      state.isCacheRetry = false;
       stopLogPolling();
       await loadActiveBuilds();
       loadBuildLogs(state.projectName);
@@ -1309,7 +1390,8 @@ function connectBuildLogs(buildId, initialBuildInfo) {
     currentEventSource = null;
 
     // Detect cancellation from the error message
-    if (errorMessage.includes('已取消') || errorMessage.includes('cancelled')) {
+    const isCancelled = errorMessage.includes('已取消') || errorMessage.includes('cancelled');
+    if (isCancelled) {
       elements.buildStatus.className = 'build-status error';
       elements.buildStatus.querySelector('.status-text').textContent = '构建已取消';
     } else {
@@ -1324,13 +1406,32 @@ function connectBuildLogs(buildId, initialBuildInfo) {
     await loadActiveBuilds();
     // Then load build logs from disk
     loadBuildLogs(state.projectName);
-    updateBuildButtonState();
+
+    // Offer cache retry: only when original build used cache, not cancelled, and not already a retry
+    if (state.currentBuildUseCache === true && !isCancelled && !state.isCacheRetry) {
+      // Keep button disabled and show retry prompt
+      elements.buildBtn.disabled = true;
+      elements.buildBtn.textContent = '构建失败 - 可重试';
+      showActionToast(
+        '缓存构建失败，是否不使用缓存重试？',
+        'error',
+        '无缓存重试',
+        () => retryBuildWithoutCache()
+      );
+    } else {
+      // Normal error cleanup
+      state.isCacheRetry = false;
+      state.currentBuildUseCache = null;
+      updateBuildButtonState();
+    }
   });
 
   eventSource.onerror = async () => {
     eventSource.close();
     currentEventSource = null;
     state.buildId = null;
+    state.currentBuildUseCache = null;
+    state.isCacheRetry = false;
     elements.buildStatus.className = 'build-status error';
     elements.buildStatus.querySelector('.status-text').textContent = '连接断开';
 
@@ -1515,6 +1616,48 @@ function showToast(message, type = 'info') {
       toast.remove();
     }
   }, 3000);
+}
+
+// Show toast notification with an action button
+function showActionToast(message, type, actionLabel, actionCallback) {
+  // Remove existing toast if any
+  const existingToast = document.querySelector('.toast-notification');
+  if (existingToast) {
+    existingToast.remove();
+  }
+
+  // Create toast element
+  const toast = document.createElement('div');
+  toast.className = `toast-notification toast-${type} toast-with-action`;
+
+  const textSpan = document.createElement('span');
+  textSpan.textContent = message;
+  toast.appendChild(textSpan);
+
+  const actionBtn = document.createElement('button');
+  actionBtn.className = 'toast-action-btn';
+  actionBtn.textContent = actionLabel;
+  actionBtn.addEventListener('click', () => {
+    if (toast.parentNode) {
+      toast.remove();
+    }
+    actionCallback();
+  });
+  toast.appendChild(actionBtn);
+
+  document.body.appendChild(toast);
+
+  // Auto-remove after 15 seconds and reset retry state
+  setTimeout(() => {
+    if (toast.parentNode) {
+      toast.remove();
+      // User didn't act on the retry offer — reset state and button
+      if (!state.isCacheRetry) {
+        state.currentBuildUseCache = null;
+        updateBuildButtonState();
+      }
+    }
+  }, 15000);
 }
 
 // Render APKs with Active Builds

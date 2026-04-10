@@ -2,7 +2,9 @@ const fs = require('fs');
 const path = require('path');
 const config = require('../../config.json');
 
-const apkDir = config.apk.outputDir;
+const apkDir = path.isAbsolute(config.apk.outputDir)
+  ? config.apk.outputDir
+  : path.resolve(__dirname, '../../', config.apk.outputDir);
 
 // Ensure APK directory exists
 if (!fs.existsSync(apkDir)) {

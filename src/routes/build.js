@@ -44,6 +44,7 @@ async function executeBuild(buildId, res) {
         build.versionCode,
         build.versionName,
         build.jdkVersion,
+        build.useCache,
         (log) => {
           buildQueue.addLog(buildId, log);
           if (res && !res.writableEnded) {

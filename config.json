@@ -17,7 +17,7 @@
     "jdk21": "D:\\Program Files\\Android\\Android Studio\\jbr"
   },
   "apk": {
-    "outputDir": "D:\\WebWorkplace\\apk",
+    "outputDir": "apk",
     "maxRecordsPerProject": 5
   },
   "build": {

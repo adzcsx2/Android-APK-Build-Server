@@ -6,6 +6,11 @@ const os = require('os');
 // Load config
 const config = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), 'utf8'));
 
+// Resolve relative outputDir to absolute path based on project root
+if (config.apk && config.apk.outputDir && !path.isAbsolute(config.apk.outputDir)) {
+  config.apk.outputDir = path.resolve(__dirname, config.apk.outputDir);
+}
+
 // Create Express app
 const app = express();
 app.use(express.json());
