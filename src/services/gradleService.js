@@ -142,6 +142,22 @@ function getVariants(projectPath, moduleName) {
     dimensionOrder = Array.from(flavorDimensions.keys());
   }
 
+  // Auto-assign flavors without explicit dimension to the single declared dimension.
+  // In Gradle, when only one flavorDimensions is declared, all flavors are automatically
+  // assigned to that dimension even without an explicit `dimension "xxx"` in each block.
+  if (dimensionOrder.length === 1) {
+    const soleDim = dimensionOrder[0];
+    if (!flavorDimensions.has(soleDim)) {
+      flavorDimensions.set(soleDim, []);
+    }
+    const assigned = new Set(flavorDimensions.get(soleDim));
+    for (const name of flavorNames) {
+      if (!assigned.has(name)) {
+        flavorDimensions.get(soleDim).push(name);
+      }
+    }
+  }
+
   let buildTypes = ['debug', 'release'];
   const typesContent = extractBlock(content, 'buildTypes');
   if (typesContent) {
@@ -580,7 +596,20 @@ function runBuild(projectPath, branch, moduleName, variant, versionCode, version
         return reject(new Error('构建已取消'));
       }
 
-      // Step 3: Delete local.properties to avoid SDK path conflicts
+      // Step 3: Clean intermediates to prevent stale resource merge errors
+      // AGP 7.x has a known issue where merged-not-compiled-resources can become
+      // corrupted/stale after git reset/switch, causing "Unable to locate resourceFile" errors
+      const intermediatesDir = path.join(projectPath, moduleName, 'build', 'intermediates');
+      if (fs.existsSync(intermediatesDir)) {
+        try {
+          fs.rmSync(intermediatesDir, { recursive: true, force: true });
+          onLog('[BUILD] 已清理 build/intermediates 缓存');
+        } catch (e) {
+          onLog(`[BUILD] 清理 intermediates 失败: ${e.message}`);
+        }
+      }
+
+      // Step 4: Delete local.properties to avoid SDK path conflicts
       const localPropsPath = path.join(projectPath, 'local.properties');
       if (fs.existsSync(localPropsPath)) {
         try {
@@ -591,7 +620,7 @@ function runBuild(projectPath, branch, moduleName, variant, versionCode, version
         }
       }
 
-      // Step 4: Run Gradle build
+      // Step 5: Run Gradle build
       onLog('[BUILD] ========================================');
       onLog('[BUILD] 开始 Gradle 构建...');
       onLog('[BUILD] ========================================');

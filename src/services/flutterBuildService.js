@@ -131,6 +131,22 @@ function getVariants(projectPath, moduleName) {
     dimensionOrder = Array.from(flavorDimensions.keys());
   }
 
+  // Auto-assign flavors without explicit dimension to the single declared dimension.
+  // In Gradle, when only one flavorDimensions is declared, all flavors are automatically
+  // assigned to that dimension even without an explicit `dimension "xxx"` in each block.
+  if (dimensionOrder.length === 1) {
+    const soleDim = dimensionOrder[0];
+    if (!flavorDimensions.has(soleDim)) {
+      flavorDimensions.set(soleDim, []);
+    }
+    const assigned = new Set(flavorDimensions.get(soleDim));
+    for (const name of flavorNames) {
+      if (!assigned.has(name)) {
+        flavorDimensions.get(soleDim).push(name);
+      }
+    }
+  }
+
   // Combine flavors x buildTypes
   if (dimensionOrder.length > 0) {
     const dimArrays = dimensionOrder.map(dim => flavorDimensions.get(dim) || []);
@@ -260,7 +276,31 @@ function runBuild(projectPath, branch, flavor, buildType, env, versionCode, vers
         return reject(new Error('Build cancelled'));
       }
 
-      // Step 3: Do NOT delete local.properties (Flutter Gradle plugin needs it)
+      // Step 3: Switch env file (.env.dev / .env.prod -> .env)
+      if (env) {
+        if (typeof env !== 'string' || !/^[\w-]+$/.test(env)) {
+          onLog('[ENV] Invalid env parameter format, skipping env switch');
+        } else {
+          onLog('[ENV] ========================================');
+          onLog('[ENV] Switching environment file...');
+          onLog('[ENV] ========================================');
+          const envFromFile = path.join(projectPath, `.env.${env}`);
+          const envToFile = path.join(projectPath, '.env');
+          if (fs.existsSync(envFromFile)) {
+            try {
+              fs.copyFileSync(envFromFile, envToFile);
+              onLog(`[ENV] Copied .env.${env} -> .env`);
+              onLog('[ENV] ========================================');
+            } catch (err) {
+              onLog(`[ENV] Failed to copy env file: ${err.message}`);
+              onLog('[ENV] ========================================');
+            }
+          } else {
+            onLog(`[ENV] .env.${env} not found, skipping env switch`);
+            onLog('[ENV] ========================================');
+          }
+        }
+      }
 
       // Step 4: Prepare environment
       const projectName = path.basename(projectPath);
@@ -282,31 +322,27 @@ function runBuild(projectPath, branch, flavor, buildType, env, versionCode, vers
         buildEnv.ANDROID_SDK_ROOT = config.androidSdk;
       }
 
-      // Step 5: Run build_runner to generate config.gen.dart (if needed)
+      // Step 5: Run flutter pub get to ensure dependencies are up to date after git sync
       const isWindows = process.platform === 'win32';
       const flutterCmd = config.flutterSdk
         ? path.join(config.flutterSdk, 'bin', isWindows ? 'flutter.bat' : 'flutter')
         : 'flutter';
 
-      const configGenPath = path.join(projectPath, 'lib', 'config', 'config.gen.dart');
-      if (!fs.existsSync(configGenPath)) {
-        onLog('[BUILD] ========================================');
-        onLog('[BUILD] config.gen.dart not found, running build_runner...');
-        onLog('[BUILD] ========================================');
+      onLog('[BUILD] ========================================');
+      onLog('[BUILD] Running flutter pub get...');
+      onLog('[BUILD] ========================================');
 
-        const runnerArgs = ['pub', 'run', 'build_runner', 'build', '--delete-conflicting-outputs'];
-        const buildRunnerResult = await spawnAsync(flutterCmd, runnerArgs, projectPath, buildEnv, onLog);
+      const pubGetResult = await spawnAsync(flutterCmd, ['pub', 'get'], projectPath, buildEnv, onLog);
 
-        if (isCancelled && isCancelled()) {
-          onLog('[BUILD] Build cancelled after build_runner');
-          return reject(new Error('Build cancelled'));
-        }
+      if (isCancelled && isCancelled()) {
+        onLog('[BUILD] Build cancelled after pub get');
+        return reject(new Error('Build cancelled'));
+      }
 
-        if (buildRunnerResult !== 0) {
-          onLog('[BUILD] build_runner failed, skipping...');
-        } else {
-          onLog('[BUILD] build_runner completed successfully');
-        }
+      if (pubGetResult !== 0) {
+        onLog('[BUILD] flutter pub get failed, attempting build anyway...');
+      } else {
+        onLog('[BUILD] flutter pub get completed successfully');
       }
 
       // Step 6: Run flutter build

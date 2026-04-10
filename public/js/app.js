@@ -782,6 +782,9 @@ async function performCheckout() {
 
     // Load modules from the newly checked-out branch (force disk values)
     await loadModules(null);
+
+    // Refresh branch commit log to reflect the latest state
+    fetchBranchLog(state.projectName, state.branch);
   } catch (error) {
     console.error('Branch checkout error:', error);
     showToast(`切换分支失败: ${error.message}`, 'error');
