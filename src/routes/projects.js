@@ -20,6 +20,23 @@ router.get('/projects', (req, res) => {
 });
 
 /**
+ * GET /api/projects/:name/current-branch - Get current git branch
+ */
+router.get('/projects/:name/current-branch', (req, res) => {
+  try {
+    const project = projectService.getProjectByName(req.params.name);
+    if (!project) {
+      return res.status(404).json({ success: false, error: '项目不存在' });
+    }
+
+    const currentBranch = gitService.getCurrentBranch(project.path);
+    res.json({ success: true, currentBranch });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
  * GET /api/projects/:name/branches - List branches for a project
  */
 router.get('/projects/:name/branches', (req, res) => {

@@ -3,7 +3,6 @@ const path = require('path');
 const { spawn } = require('child_process');
 const config = require('../../config.json');
 const gitService = require('./gitService');
-const gradleService = require('./gradleService');
 
 /**
  * Get modules - Flutter projects always have a single 'app' module
@@ -251,7 +250,7 @@ function updateVersion(projectPath, versionCode, versionName, onLog) {
 /**
  * Run Flutter build with real-time output
  */
-function runBuild(projectPath, branch, flavor, buildType, env, versionCode, versionName, jdkVersion, useCache, onLog, onProcessCreated, isCancelled) {
+function runBuild(projectPath, branch, flavor, buildType, env, versionCode, versionName, useCache, onLog, onProcessCreated, isCancelled) {
   return new Promise(async (resolve, reject) => {
     const logs = [];
 
@@ -303,19 +302,12 @@ function runBuild(projectPath, branch, flavor, buildType, env, versionCode, vers
       }
 
       // Step 4: Prepare environment
-      const projectName = path.basename(projectPath);
-      const jdkPath = gradleService.getJdkPath(projectName, jdkVersion);
-
       const buildEnv = { ...process.env };
       // Ensure System32 is in PATH (Flutter uses WHERE command internally which needs it)
       const system32 = 'C:\\Windows\\System32';
       const currentPath = buildEnv.PATH || buildEnv.Path || '';
       if (!currentPath.includes(system32)) {
         buildEnv.PATH = `${system32}${path.delimiter}${currentPath}`;
-      }
-      if (jdkPath) {
-        buildEnv.JAVA_HOME = jdkPath;
-        buildEnv.PATH = `${path.join(jdkPath, 'bin')}${path.delimiter}${buildEnv.PATH || ''}`;
       }
       if (config.androidSdk) {
         buildEnv.ANDROID_HOME = config.androidSdk;
@@ -365,12 +357,61 @@ function runBuild(projectPath, branch, flavor, buildType, env, versionCode, vers
         onLog('[BUILD] flutter pub get completed successfully');
       }
 
+      // Step 5.5: Check and generate i18n files (getx-cli)
+      try {
+        const pubspecPath = path.join(projectPath, 'pubspec.yaml');
+        const pubspecContent = fs.readFileSync(pubspecPath, 'utf8');
+        // Check if project uses getx (has 'get:' dependency)
+        if (/\bget\s*:/.test(pubspecContent)) {
+          onLog('[I18N] ========================================');
+          onLog('[I18N] 检测到 getx 依赖，开始生成国际化文件...');
+          onLog('[I18N] ========================================');
+
+          // Try running the generate command directly; if get_cli is not installed, activate it first
+          const generateResult = await spawnAsync(
+            flutterCmd,
+            ['pub', 'global', 'run', 'get_cli:get', 'generate', 'locales'],
+            projectPath, buildEnv, onLog
+          );
+
+          if (generateResult !== 0) {
+            onLog('[I18N] get_cli 可能未安装，尝试自动安装...');
+            const activateResult = await spawnAsync(
+              flutterCmd,
+              ['pub', 'global', 'activate', 'get_cli'],
+              projectPath, buildEnv, onLog
+            );
+
+            if (activateResult === 0) {
+              onLog('[I18N] get_cli 安装成功，重新生成国际化文件...');
+              await spawnAsync(
+                flutterCmd,
+                ['pub', 'global', 'run', 'get_cli:get', 'generate', 'locales'],
+                projectPath, buildEnv, onLog
+              );
+            } else {
+              onLog('[I18N] get_cli 安装失败，跳过国际化生成');
+            }
+          }
+
+          onLog('[I18N] 国际化文件处理完毕');
+        } else {
+          onLog('[I18N] 未检测到 getx 依赖，跳过国际化生成');
+        }
+      } catch (i18nError) {
+        onLog(`[I18N] 国际化生成过程出错: ${i18nError.message}，继续构建...`);
+      }
+
+      if (isCancelled && isCancelled()) {
+        onLog('[BUILD] Build cancelled after i18n generation');
+        return reject(new Error('Build cancelled'));
+      }
+
       // Step 6: Run flutter build
       onLog('[BUILD] ========================================');
       onLog('[BUILD] Starting Flutter build...');
       onLog('[BUILD] ========================================');
 
-      onLog(`[BUILD] JAVA_HOME: ${jdkPath || 'default'}`);
       onLog(`[BUILD] Flavor: ${flavor}, BuildType: ${buildType}`);
       onLog(`[BUILD] Version: ${versionName} (${versionCode})`);
 

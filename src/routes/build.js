@@ -7,6 +7,7 @@ const apkService = require('../services/apkService');
 const buildLogService = require('../services/buildLogService');
 const sse = require('../utils/sse');
 const jdkService = require('../services/jdkService');
+const gitService = require('../services/gitService');
 
 const router = express.Router();
 
@@ -43,7 +44,6 @@ async function executeBuild(buildId, res) {
         build.env,
         build.versionCode,
         build.versionName,
-        build.jdkVersion,
         build.useCache,
         (log) => {
           buildQueue.addLog(buildId, log);
@@ -159,29 +159,40 @@ router.post('/build', async (req, res) => {
       return res.status(400).json({ success: false, error: '缺少必要参数' });
     }
 
-    // Validate jdkVersion if provided
-    const availableVersions = jdkService.getAvailableVersions();
-    let validatedJdkVersion = null;
-    if (jdkVersion != null) {
-      const parsed = parseInt(jdkVersion, 10);
-      if (availableVersions.length === 0) {
-        return res.status(400).json({
-          success: false,
-          error: '未配置任何 JDK 版本，请在设置页面添加 JDK'
-        });
-      }
-      if (isNaN(parsed) || !availableVersions.includes(parsed)) {
-        return res.status(400).json({
-          success: false,
-          error: '无效的 JDK 版本。可用版本: ' + availableVersions.join(', ')
-        });
-      }
-      validatedJdkVersion = parsed;
-    }
-
     const project = projectService.getProjectByName(projectName);
     if (!project) {
       return res.status(404).json({ success: false, error: '项目不存在' });
+    }
+
+    // Validate that the current git branch matches the selected branch
+    const currentBranch = gitService.getCurrentBranch(project.path);
+    if (currentBranch && currentBranch !== branch) {
+      return res.status(400).json({
+        success: false,
+        error: `当前分支 (${currentBranch}) 与所选分支 (${branch}) 不一致，请先点击"切换分支"按钮切换到目标分支后再构建`
+      });
+    }
+
+    // Validate jdkVersion if provided (only for Android projects)
+    const availableVersions = jdkService.getAvailableVersions();
+    let validatedJdkVersion = null;
+    if (project.type !== 'flutter') {
+      if (jdkVersion != null) {
+        const parsed = parseInt(jdkVersion, 10);
+        if (availableVersions.length === 0) {
+          return res.status(400).json({
+            success: false,
+            error: '未配置任何 JDK 版本，请在设置页面添加 JDK'
+          });
+        }
+        if (isNaN(parsed) || !availableVersions.includes(parsed)) {
+          return res.status(400).json({
+            success: false,
+            error: '无效的 JDK 版本。可用版本: ' + availableVersions.join(', ')
+          });
+        }
+        validatedJdkVersion = parsed;
+      }
     }
 
     let buildId;
@@ -211,7 +222,7 @@ router.post('/build', async (req, res) => {
       const buildType = buildTypeMatch ? buildTypeMatch[1].toLowerCase() : 'release';
       const flavor = buildTypeMatch ? validVariant.substring(0, validVariant.length - buildTypeMatch[1].length) : validVariant;
 
-      buildId = buildQueue.createBuild(projectName, branch, moduleName, validVariant, versionCode, versionName, validatedJdkVersion, useCache !== false, env);
+      buildId = buildQueue.createBuild(projectName, branch, moduleName, validVariant, versionCode, versionName, null, useCache !== false, env);
 
       // Store parsed flavor and buildType on the build object for executeBuild
       buildQueue.updateBuild(buildId, { flavor, buildType });

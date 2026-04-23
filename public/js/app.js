@@ -235,6 +235,7 @@ const elements = {
   moduleSelect: document.getElementById('module-select'),
   variantSelect: document.getElementById('variant-select'),
   jdkVersionSelect: document.getElementById('jdk-version-select'),
+  jdkVersionGroup: document.getElementById('jdk-version-group'),
   versionCode: document.getElementById('version-code'),
   versionName: document.getElementById('version-name'),
   useCacheCheckbox: document.getElementById('use-cache-checkbox'),
@@ -451,7 +452,7 @@ function renderProjects(projects) {
       ? `<div class="build-indicator ${escapeHtml(status)}"></div>`
       : '';
     return `
-    <div class="project-item" data-name="${safeName}" data-type="${safeType}">
+    <div class="project-item ${safeType === 'flutter' ? 'project-flutter' : 'project-android'}" data-name="${safeName}" data-type="${safeType}">
       ${indicatorHtml}
       <div class="name">${safeName}</div>
       <div class="type">${safeType === 'flutter' ? 'Flutter' : 'Android'}</div>
@@ -988,14 +989,26 @@ async function onModuleChange(savedConfig = null) {
     loadVersion(moduleName, savedConfig)
   ]);
 
-  // Render JDK versions and restore selection
-  const versions = state.availableJdkVersions.length > 0
-    ? state.availableJdkVersions
-    : await loadJdkVersions();
-  const savedJdkVersion = savedConfig?.jdkVersion != null ? savedConfig.jdkVersion : null;
-  const defaultJdkVersion = state.defaultJdkVersion || null;
-  renderJdkVersions(versions, savedJdkVersion, defaultJdkVersion);
-  state.jdkVersion = savedJdkVersion != null ? savedJdkVersion : defaultJdkVersion;
+  // Render JDK versions and restore selection (only for Android projects)
+  if (state.projectType === 'flutter') {
+    // Hide JDK selection for Flutter projects
+    if (elements.jdkVersionGroup) {
+      elements.jdkVersionGroup.classList.add('hidden');
+    }
+    state.jdkVersion = null;
+  } else {
+    // Show JDK selection for Android projects
+    if (elements.jdkVersionGroup) {
+      elements.jdkVersionGroup.classList.remove('hidden');
+    }
+    const versions = state.availableJdkVersions.length > 0
+      ? state.availableJdkVersions
+      : await loadJdkVersions();
+    const savedJdkVersion = savedConfig?.jdkVersion != null ? savedConfig.jdkVersion : null;
+    const defaultJdkVersion = state.defaultJdkVersion || null;
+    renderJdkVersions(versions, savedJdkVersion, defaultJdkVersion);
+    state.jdkVersion = savedJdkVersion != null ? savedJdkVersion : defaultJdkVersion;
+  }
 
   // Restore useCache checkbox state
   if (savedConfig && savedConfig.useCache !== undefined) {
@@ -1117,7 +1130,7 @@ async function startBuild() {
   state.variant = elements.variantSelect.value;
   state.versionCode = parseInt(elements.versionCode.value, 10);
   state.versionName = elements.versionName.value;
-  state.jdkVersion = elements.jdkVersionSelect && elements.jdkVersionSelect.value
+  state.jdkVersion = (state.projectType !== 'flutter' && elements.jdkVersionSelect && elements.jdkVersionSelect.value)
     ? parseInt(elements.jdkVersionSelect.value, 10)
     : null;
   state.useCache = elements.useCacheCheckbox.checked;
@@ -1151,7 +1164,7 @@ async function startBuild() {
         variant: state.variant,
         versionCode: state.versionCode,
         versionName: state.versionName,
-        jdkVersion: state.jdkVersion,
+        jdkVersion: state.projectType === 'flutter' ? undefined : state.jdkVersion,
         useCache: state.useCache,
         env: state.projectType === 'flutter' ? state.env : undefined
       })
@@ -1190,7 +1203,12 @@ async function startBuild() {
         updateBuildButtonState();
       });
     } else {
-      alert(`构建失败: ${data.error}`);
+      // Check if the error is about branch mismatch
+      if (data.error && data.error.includes('不一致')) {
+        showToast(data.error, 'error');
+      } else {
+        alert(`构建失败: ${data.error}`);
+      }
       elements.buildBtn.disabled = false;
       elements.buildBtn.textContent = '开始构建';
     }
@@ -1225,7 +1243,7 @@ async function retryBuildWithoutCache() {
         variant: state.variant,
         versionCode: state.versionCode,
         versionName: state.versionName,
-        jdkVersion: state.jdkVersion,
+        jdkVersion: state.projectType === 'flutter' ? undefined : state.jdkVersion,
         useCache: false,
         env: state.projectType === 'flutter' ? state.env : undefined
       })

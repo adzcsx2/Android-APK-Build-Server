@@ -94,6 +94,26 @@ main {
   color: #888;
 }
 
+/* Flutter project card style */
+.project-item.project-flutter {
+  border-color: #b8d4f0;
+  background: #f0f6ff;
+}
+
+.project-item.project-flutter:hover {
+  border-color: #4a90d9;
+  background: #e3eeff;
+}
+
+.project-item.project-flutter.selected {
+  border-color: #4a90d9;
+  background: #d6e6ff;
+}
+
+.project-item.project-flutter .type {
+  color: #4a90d9;
+}
+
 /* Build status indicator on project item */
 .project-item .build-indicator {
   position: absolute;
