@@ -38,8 +38,8 @@ let currentEventSource = null;
 let buildButtonLastClickTime = 0;
 const BUILD_BUTTON_COOLDOWN = 5000; // 5 seconds
 
-// API Base URL
-const API_BASE = '/build/api';
+// API Base URL - use detected basePath from window
+const API_BASE = window.API_BASE || '/build/api';
 
 // ============================================
 // UTILITY FUNCTIONS
@@ -444,7 +444,12 @@ function renderProjects(projects) {
 
   const projectStatuses = getProjectBuildStatuses();
 
-  elements.projectList.innerHTML = projects.map(p => {
+  // Group projects by type
+  const androidProjects = projects.filter(p => p.type === 'android');
+  const flutterProjects = projects.filter(p => p.type === 'flutter');
+
+  // Helper function to render project card
+  const renderProjectCard = (p) => {
     const status = projectStatuses[p.name];
     const safeName = escapeHtml(p.name);
     const safeType = escapeHtml(p.type);
@@ -452,17 +457,69 @@ function renderProjects(projects) {
       ? `<div class="build-indicator ${escapeHtml(status)}"></div>`
       : '';
     return `
-    <div class="project-item ${safeType === 'flutter' ? 'project-flutter' : 'project-android'}" data-name="${safeName}" data-type="${safeType}">
-      ${indicatorHtml}
-      <div class="name">${safeName}</div>
-      <div class="type">${safeType === 'flutter' ? 'Flutter' : 'Android'}</div>
-    </div>
-  `;
-  }).join('');
+      <div class="project-item ${safeType === 'flutter' ? 'project-flutter' : 'project-android'}" data-name="${safeName}" data-type="${safeType}">
+        ${indicatorHtml}
+        <div class="name">${safeName}</div>
+        <div class="type">${safeType === 'flutter' ? 'Flutter' : 'Android'}</div>
+      </div>
+    `;
+  };
 
-  // Add click handlers
+  // Build HTML with sections
+  let html = '';
+  let sectionIndex = 0;
+
+  // Android section
+  if (androidProjects.length > 0) {
+    html += `
+      <div class="project-section" data-section-type="android">
+        <div class="project-section-header android-header collapsed" data-section-index="${sectionIndex}">
+          <span class="icon">🤖</span>
+          <span class="section-title">Android 项目 (${androidProjects.length})</span>
+          <span class="collapse-icon">▶</span>
+        </div>
+        <div class="project-grid hidden" data-section-content="${sectionIndex}">
+          ${androidProjects.map(renderProjectCard).join('')}
+        </div>
+      </div>
+    `;
+    sectionIndex++;
+  }
+
+  // Flutter section
+  if (flutterProjects.length > 0) {
+    html += `
+      <div class="project-section" data-section-type="flutter">
+        <div class="project-section-header flutter-header collapsed" data-section-index="${sectionIndex}">
+          <span class="icon">📱</span>
+          <span class="section-title">Flutter 项目 (${flutterProjects.length})</span>
+          <span class="collapse-icon">▶</span>
+        </div>
+        <div class="project-grid hidden" data-section-content="${sectionIndex}">
+          ${flutterProjects.map(renderProjectCard).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  elements.projectList.innerHTML = html;
+
+  // Add click handlers for section headers (collapse/expand)
+  document.querySelectorAll('.project-section-header').forEach(header => {
+    header.addEventListener('click', (e) => {
+      // Only toggle if clicking the header itself, not a project item
+      if (e.target.closest('.project-item')) return;
+
+      toggleSection(header);
+    });
+  });
+
+  // Add click handlers for project items
   document.querySelectorAll('.project-item').forEach(item => {
-    item.addEventListener('click', () => selectProject(item.dataset.name, item.dataset.type));
+    item.addEventListener('click', (e) => {
+      e.stopPropagation(); // Prevent section toggle
+      selectProject(item.dataset.name, item.dataset.type);
+    });
   });
 
   // Restore selection state if a project is currently selected
@@ -518,6 +575,25 @@ async function refreshProjectList() {
   }
 }
 
+// Toggle section collapse/expand
+function toggleSection(header) {
+  const sectionIndex = header.dataset.sectionIndex;
+  const content = document.querySelector(`[data-section-content="${sectionIndex}"]`);
+  const icon = header.querySelector('.collapse-icon');
+
+  if (header.classList.contains('collapsed')) {
+    // Expand
+    header.classList.remove('collapsed');
+    content.classList.remove('hidden');
+    icon.textContent = '▼';
+  } else {
+    // Collapse
+    header.classList.add('collapsed');
+    content.classList.add('hidden');
+    icon.textContent = '▶';
+  }
+}
+
 // Select Project
 async function selectProject(name, type) {
   // Refresh project list in background (server has 10s cache, so no heavy IO)
@@ -527,6 +603,12 @@ async function selectProject(name, type) {
   document.querySelectorAll('.project-item').forEach(item => {
     item.classList.toggle('selected', item.dataset.name === name);
   });
+
+  // Auto-scroll to branch selection
+  const branchStep = document.getElementById('step-branch');
+  if (branchStep) {
+    branchStep.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 
   state.projectName = name;
   state.projectType = type || 'android';

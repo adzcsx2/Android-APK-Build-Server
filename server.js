@@ -22,8 +22,11 @@ const initRoutes = require('./src/routes/init');
 // Mount init page at /init (root level, outside basePath)
 app.use('/init', initRoutes);
 
-// Mount routes under basePath
+// Mount routes under basePath (for backward compatibility)
 app.use(config.server.basePath, routes);
+
+// Mount routes at root path (primary access)
+app.use('/', routes);
 
 // Error handling
 app.use((err, req, res, next) => {
@@ -83,8 +86,8 @@ app.listen(port, host, () => {
   console.log('   Android APK Build Server Started');
   console.log('========================================');
   console.log('');
-  console.log('  Local:   http://localhost:' + port + basePath);
-  console.log('  Network: http://' + localIP + ':' + port + basePath);
+  console.log('  Local:   http://localhost:' + port);
+  console.log('  Network: http://' + localIP + ':' + port);
   console.log('');
   console.log('  APK retention: ' + config.apk.retentionDays + ' days');
   console.log('  Max concurrent builds: ' + config.build.maxConcurrent);

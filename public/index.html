@@ -5,7 +5,23 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Android APK Build Server</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='url(%23g)'/%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='32' y2='32' gradientUnits='userSpaceOnUse'%3E%3Cstop stop-color='%233ddc84'/%3E%3Cstop offset='1' stop-color='%2307a845'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ctext x='16' y='16' text-anchor='middle' dominant-baseline='central' fill='white' font-family='system-ui,sans-serif' font-size='18' font-weight='700'%3EA%3C/text%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/build/css/style.css">
+  <link rel="stylesheet" href="/build/css/style.css" id="stylesheet-link">
+  <script>
+    // Detect basePath based on current URL path
+    // If accessing via /build, use /build; otherwise use root path
+    (function() {
+      const path = window.location.pathname;
+      if (path.startsWith('/build')) {
+        window.BASE_PATH = '/build';
+        window.API_BASE = '/build/api';
+      } else {
+        window.BASE_PATH = '';
+        window.API_BASE = '/api';
+      }
+      // Update stylesheet link to use detected basePath
+      document.getElementById('stylesheet-link').href = window.BASE_PATH + '/css/style.css';
+    })();
+  </script>
 </head>
 <body>
   <div class="container">
@@ -121,6 +137,10 @@
     <div class="loading-text" id="loading-text">加载中...</div>
   </div>
 
-  <script src="/build/js/app.js?v=19"></script>
+  <script src="/build/js/app.js?v=20" id="app-script"></script>
+  <script>
+    // Update app script src to use detected basePath
+    document.getElementById('app-script').src = window.BASE_PATH + '/js/app.js?v=20';
+  </script>
 </body>
 </html>

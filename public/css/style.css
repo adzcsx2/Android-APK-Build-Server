@@ -58,9 +58,79 @@ main {
 
 /* Project List */
 .project-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.project-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.project-section-header {
+  font-size: 1.1em;
+  font-weight: 600;
+  color: #444;
+  padding: 10px 15px;
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  border-radius: 8px;
+  border-left: 4px solid #667eea;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.2s ease;
+}
+
+.project-section-header:hover {
+  background: linear-gradient(135deg, #e9ecef 0%, #dee2e6 100%);
+}
+
+.project-section-header .section-title {
+  flex: 1;
+}
+
+.project-section-header .collapse-icon {
+  font-size: 0.8em;
+  transition: transform 0.2s ease;
+}
+
+.project-section-header .icon {
+  font-size: 1.2em;
+}
+
+.project-section-header.android-header {
+  border-left-color: #667eea;
+  background: linear-gradient(135deg, #f0f4ff 0%, #e8edff 100%);
+}
+
+.project-section-header.flutter-header {
+  border-left-color: #4a90d9;
+  background: linear-gradient(135deg, #f0f6ff 0%, #e3eeff 100%);
+}
+
+.project-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 15px;
+  margin-top: 12px;
+}
+
+.project-grid.hidden {
+  display: none;
+}
+
+.empty-section {
+  text-align: center;
+  padding: 30px;
+  color: #888;
+  font-size: 0.95em;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border: 1px dashed #dee2e6;
 }
 
 .project-item {
