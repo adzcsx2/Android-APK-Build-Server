@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { spawn, execSync } = require('child_process');
+const { spawn } = require('child_process');
 const config = require('../../config.json');
 const gitService = require('./gitService');
 const jdkService = require('./jdkService');

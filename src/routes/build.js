@@ -165,7 +165,7 @@ router.post('/build', async (req, res) => {
     }
 
     // Validate that the current git branch matches the selected branch
-    const currentBranch = gitService.getCurrentBranch(project.path);
+    const currentBranch = await gitService.getCurrentBranch(project.path);
     if (currentBranch && currentBranch !== branch) {
       return res.status(400).json({
         success: false,

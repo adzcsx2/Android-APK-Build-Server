@@ -1,16 +1,16 @@
-const { execSync, execFileSync, spawn } = require('child_process');
+const { spawn } = require('child_process');
 const path = require('path');
+const spawnAsync = require('../utils/spawnAsync');
 
 /**
  * Get all branches of a git repository
  */
-function getBranches(projectPath) {
+async function getBranches(projectPath) {
   try {
     // Fetch first to get latest remote branches
     try {
-      execSync('git fetch --prune', {
+      await spawnAsync('git', ['fetch', '--prune'], {
         cwd: projectPath,
-        encoding: 'utf8',
         timeout: 60000
       });
     } catch (e) {
@@ -18,11 +18,15 @@ function getBranches(projectPath) {
     }
 
     // Get local branches
-    const output = execSync('git branch --list', {
+    const localResult = await spawnAsync('git', ['branch', '--list'], {
       cwd: projectPath,
-      encoding: 'utf8',
       timeout: 30000
     });
+    if (localResult.code !== 0) {
+      console.error('git branch --list failed:', localResult.stderr);
+      return [];
+    }
+    const output = localResult.stdout;
 
     const localBranches = output
       .split('\n')
@@ -35,11 +39,15 @@ function getBranches(projectPath) {
       });
 
     // Get remote branches
-    const remoteOutput = execSync('git branch -r', {
+    const remoteResult = await spawnAsync('git', ['branch', '-r'], {
       cwd: projectPath,
-      encoding: 'utf8',
       timeout: 30000
     });
+    if (remoteResult.code !== 0) {
+      console.error('git branch -r failed:', remoteResult.stderr);
+      return localBranches; // Return local branches only
+    }
+    const remoteOutput = remoteResult.stdout;
 
     const remoteBranches = remoteOutput
       .split('\n')
@@ -72,14 +80,14 @@ function getBranches(projectPath) {
 /**
  * Get current branch
  */
-function getCurrentBranch(projectPath) {
+async function getCurrentBranch(projectPath) {
   try {
-    const output = execSync('git branch --show-current', {
+    const { stdout, code } = await spawnAsync('git', ['branch', '--show-current'], {
       cwd: projectPath,
-      encoding: 'utf8',
       timeout: 30000
     });
-    return output.trim();
+    if (code !== 0) return null;
+    return stdout.trim();
   } catch (error) {
     return null;
   }
@@ -355,9 +363,9 @@ function checkoutBranch(projectPath, branchName, isRemote = false) {
  * @param {string} projectPath - Path to the git repository
  * @param {string} branchName - Branch name to get logs for
  * @param {number} count - Number of commits to retrieve (default 3)
- * @returns {Array<{hash: string, author: string, date: string, message: string}>}
+ * @returns {Promise<Array<{hash: string, author: string, date: string, message: string}>>}
  */
-function getBranchLog(projectPath, branchName, count = 3) {
+async function getBranchLog(projectPath, branchName, count = 3) {
   function parseLog(output) {
     return output
       .split('\n')
@@ -378,16 +386,18 @@ function getBranchLog(projectPath, branchName, count = 3) {
   const refs = [`origin/${branchName}`, branchName];
   for (const ref of refs) {
     try {
-      const output = execFileSync(
+      const { stdout, code } = await spawnAsync(
         'git',
         ['log', ref, `-${count}`, '--format=%H|%an|%ai|%s'],
         {
           cwd: projectPath,
-          encoding: 'utf8',
-          timeout: 15000
+          timeout: 15000,
+          shell: false // Use shell: false to preserve pipe characters in format string
         }
       );
-      return parseLog(output);
+      if (code === 0 && stdout.trim()) {
+        return parseLog(stdout);
+      }
     } catch (e) {
       // Try next ref
     }

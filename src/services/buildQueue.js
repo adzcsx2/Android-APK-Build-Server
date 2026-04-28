@@ -264,9 +264,14 @@ function cancelBuild(buildId) {
         // On Windows with shell: true, process.kill('SIGTERM') only kills cmd.exe,
         // not the gradlew.bat -> java.exe child process tree.
         // Use taskkill /T /F to kill the entire process tree.
+        // Use execSync with windowsHide: true to block until process is actually killed
+        // and avoid CMD window flashing.
         const { execSync } = require('child_process');
         try {
-          execSync(`taskkill /pid ${proc.pid} /T /F`, { stdio: 'ignore' });
+          execSync(`taskkill /pid ${proc.pid} /T /F`, {
+            stdio: 'ignore',
+            windowsHide: true
+          });
           console.log(`Killed process tree for build ${buildId}, pid: ${proc.pid}`);
         } catch (killErr) {
           // Process may have already exited, try direct kill as fallback

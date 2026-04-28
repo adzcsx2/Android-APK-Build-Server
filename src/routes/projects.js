@@ -22,14 +22,14 @@ router.get('/projects', (req, res) => {
 /**
  * GET /api/projects/:name/current-branch - Get current git branch
  */
-router.get('/projects/:name/current-branch', (req, res) => {
+router.get('/projects/:name/current-branch', async (req, res) => {
   try {
     const project = projectService.getProjectByName(req.params.name);
     if (!project) {
       return res.status(404).json({ success: false, error: '项目不存在' });
     }
 
-    const currentBranch = gitService.getCurrentBranch(project.path);
+    const currentBranch = await gitService.getCurrentBranch(project.path);
     res.json({ success: true, currentBranch });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -39,15 +39,15 @@ router.get('/projects/:name/current-branch', (req, res) => {
 /**
  * GET /api/projects/:name/branches - List branches for a project
  */
-router.get('/projects/:name/branches', (req, res) => {
+router.get('/projects/:name/branches', async (req, res) => {
   try {
     const project = projectService.getProjectByName(req.params.name);
     if (!project) {
       return res.status(404).json({ success: false, error: '项目不存在' });
     }
 
-    const branches = gitService.getBranches(project.path);
-    const currentBranch = gitService.getCurrentBranch(project.path);
+    const branches = await gitService.getBranches(project.path);
+    const currentBranch = await gitService.getCurrentBranch(project.path);
 
     // Cache the fetched branches for fast project switching
     branchCacheService.saveCachedBranches(req.params.name, branches, currentBranch);
@@ -89,7 +89,7 @@ router.get('/projects/:name/branches/cached', (req, res) => {
 /**
  * GET /api/projects/:name/branch-log - Get recent commit logs for a branch
  */
-router.get('/projects/:name/branch-log', (req, res) => {
+router.get('/projects/:name/branch-log', async (req, res) => {
   try {
     const { branch } = req.query;
     if (!branch) {
@@ -108,7 +108,7 @@ router.get('/projects/:name/branch-log', (req, res) => {
 
     let count = parseInt(req.query.count, 10) || 3;
     count = Math.max(1, Math.min(count, 10));
-    const logs = gitService.getBranchLog(project.path, branch, count);
+    const logs = await gitService.getBranchLog(project.path, branch, count);
     res.json({ success: true, logs });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -160,8 +160,8 @@ router.post('/projects/:name/git/checkout', async (req, res) => {
     const result = await gitService.checkoutBranch(project.path, branch, isRemote === true);
 
     // Update cached branches after checkout
-    const branches = gitService.getBranches(project.path);
-    const currentBranch = gitService.getCurrentBranch(project.path);
+    const branches = await gitService.getBranches(project.path);
+    const currentBranch = await gitService.getCurrentBranch(project.path);
     branchCacheService.saveCachedBranches(req.params.name, branches, currentBranch);
 
     res.json({ success: true, wasRemote: result.wasRemote, currentBranch });
