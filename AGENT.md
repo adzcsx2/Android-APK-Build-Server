@@ -1,52 +1,51 @@
 # AGENT.md
 
-This file provides general guidance for all AI tools working with code in this repository.
+General guidance for all AI tools working with this repository.
 
 ## Project Overview
 
-Android APK Online Build Platform — A Node.js/Express web application that provides a browser-based interface for building Android and Flutter APKs without requiring Android Studio. Users can select projects, branches, modules, and build variants through a web UI. The application is Windows-only and uses no database.
+Android APK Online Build Platform — A Node.js/Express web application for building Android and Flutter APKs via browser. Users select projects, branches, modules, and build variants through a web UI. Windows-only, no database, JSON file persistence.
 
-## Technology Stack
+**Tech Stack:** Node.js 16+, Express 4.18, vanilla HTML/CSS/JS (no framework, no bundler), Server-Sent Events (SSE), Gradle (gradlew.bat), Flutter CLI.
 
-- Runtime: Node.js 16+
-- Backend: Express 4.18
-- Frontend: Vanilla HTML/CSS/JavaScript (no framework, no build tooling)
-- Real-time: Server-Sent Events (SSE) with polling fallback
-- Persistence: JSON files (no database)
-- Build tools: Gradle (gradlew.bat), Flutter CLI
-- Platform: Windows-only (uses taskkill, gradlew.bat, shell: true)
-- Process management: PM2 (optional for production)
+**Directory Structure:**
+- `server.js` — Express entry point
+- `config.json` — Server configuration
+- `src/routes/` — API routes (projects, build, config, init)
+- `src/services/` — Business logic (build queue, gradle/flutter services, git, workplace scanning)
+- `src/utils/` — Utilities (SSE, async spawn)
+- `public/` — Frontend SPA (index.html, app.js, init.html, init.js, style.css)
+- `data/` — JSON file persistence
+- `docs/` — Documentation root with standard taxonomy
 
-## General Coding Standards
+## Coding Standards
 
 ### File Organization
-- Source files: Prefer keeping under 500 lines; split when approaching limit
+- Source files: Prefer under 500 lines; split when approaching limit into focused components/services/helpers
 - One responsibility per file
-- Exceptions: Generated files, lockfiles, migrations, vendor code, framework entries
-- For large legacy files: Make minimal changes; refactor only when requested
+- Exceptions: Generated files, lockfiles, migrations, vendor code, framework entries, existing large legacy files
+- Legacy large files: Minimal changes only; refactor only when requested
 
-### File Naming
-- JavaScript: camelCase for files (e.g., `buildQueue.js`, `gradleService.js`)
-- All documentation: lowercase with hyphens (e.g., `TESTING_GUIDE.md`)
-- Test files: Same name as source with `.test.js` suffix (e.g., `buildQueue.test.js`)
+### Naming Conventions
+- JavaScript files: camelCase (e.g., `buildQueue.js`, `gradleService.js`)
+- Documentation: lowercase with hyphens (e.g., `TESTING_GUIDE.md`)
+- Test files: Source name + `.test.js` suffix (e.g., `buildQueue.test.js`)
 
 ### Code Style
-- Use semicolons
-- Double quotes for strings
-- 2-space indentation
+- Semicolons, double quotes, 2-space indentation
 - Prefer const over let, avoid var
-- Use async/await for asynchronous code
+- async/await for asynchronous code
 
 ### Touched-File Discipline
 - Modify only files directly related to the current task
-- Do not batch format, reorder imports, or fix lint globally unless requested
+- No batch formatting, import reordering, or global lint fixes unless requested
 - Preserve existing uncommitted changes
-- For large files, touch only necessary fragments
+- Large files: touch only necessary fragments
 
 ### Plan-First Triggers
-Before executing, plan or confirm when:
+Plan or confirm before executing when:
 - Modifying more than 3 source files
-- Making cross-module or cross-service changes
+- Cross-module or cross-service changes
 - Adding dependencies or changing build configurations
 - Changing public APIs, data models, routes, or persistence formats
 - Refactoring, moving files, or changing directory boundaries
@@ -54,13 +53,10 @@ Before executing, plan or confirm when:
 
 ### Testing
 - Test files exist but Jest is not installed; run via `npx jest`
-- Place test files alongside source files or in `__tests__/` directories
-- Name test files: `source.test.js` or `source.test.js`
+- Place test files alongside source or in `__tests__/` directories
 
 ### Commit Messages
-- Use conventional commit format: `type: description`
-- Types: feat, fix, docs, style, refactor, test, chore
-- Example: `feat: add Flutter build support`
+- Format: `type: description` (feat, fix, docs, style, refactor, test, chore)
 - Include Co-Authored-By for AI contributions
 
 ## Reuse-First Principles
@@ -73,98 +69,32 @@ Before executing, plan or confirm when:
 
 ## Key Path Index
 
-### Entry Points
-- `server.js` — Express application entry point
-- `config.json` — Server configuration
-- `public/index.html` — Main web UI
-- `public/js/app.js` — Frontend SPA (main client logic)
+**Entry Points:** `server.js`, `config.json`, `public/index.html`, `public/js/app.js`
 
-### Routes
-- `src/routes/index.js` — Route aggregation and static files
-- `src/routes/projects.js` — Project discovery and management
-- `src/routes/build.js` — Build lifecycle and execution
-- `src/routes/config.js` — Build configuration management
-- `src/routes/init.js` — Workplace configuration
+**Routes:** `src/routes/index.js` (aggregation), `projects.js`, `build.js`, `config.js`, `init.js`
 
-### Services
-- `src/services/buildQueue.js` — Concurrent build queue management
-- `src/services/gradleService.js` — Android/Gradle build operations
-- `src/services/flutterBuildService.js` — Flutter build operations
-- `src/services/gitService.js` — Git operations (branches, sync, logs)
-- `src/services/workplaceService.js` — Project scanning and discovery
+**Services:** `buildQueue.js` (concurrent queue), `gradleService.js` (Android), `flutterBuildService.js` (Flutter), `gitService.js`, `workplaceService.js` (scanning)
 
-### Utilities
-- `src/utils/sse.js` — Server-Sent Events utility
-- `src/utils/spawnAsync.js` — Async process spawning
+**Utilities:** `src/utils/sse.js`, `src/utils/spawnAsync.js`
 
-### Documentation
-- `/docs` — Standard documentation root with taxonomy
-  - `plan/` — Plans and roadmaps
-  - `design/` — Architecture and specs
-  - `guide/` — Setup and usage guides
-  - `checklist/` — Checklists and audit lists
-  - `references/` — References and indexes
-  - `reports/` — Test and audit reports
+**Data:** `data/` — JSON files for configs, branches, history, logs
 
-### Data
-- `data/` — JSON file persistence
-  - `build-history.json` — Build history records
-  - `project-configs.json` — Per-project configurations
-  - `build-logs/` — Build log files
+**Documentation:** `/docs` with categories: plan, product, design, guide, modules, references, checklist, reports
 
 ## Common Commands
 
 ```bash
-# Install dependencies
-npm install
-
-# Start development server
-npm start
-npm run dev  # With --watch (Node.js 18+)
-
-# Stop server (Windows)
-npm stop
-
-# Run tests (Jest via npx)
-npx jest
-npx jest src/services/buildQueue.test.js
-
-# Production with PM2
-pm2 start server.js --name build-server
+npm install          # Install dependencies
+npm start            # Start server
+npm run dev          # Start with --watch (Node.js 18+)
+npm stop             # Stop server (Windows)
+npx jest             # Run tests
+pm2 start server.js --name build-server  # Production
 ```
-
-## Platform-Specific Notes
-
-### Windows Constraints
-- Use `gradlew.bat` not `gradlew`
-- Use `taskkill /T /F` for process termination
-- Use `shell: true` for child_process.spawn
-- Handle Windows-specific paths
-- Support Chinese network interface names
-
-### Project Type Routing
-- Check `project.type` to determine if 'android' or 'flutter'
-- Route to appropriate service: `gradleService` or `flutterBuildService`
-
-### State Management
-- Frontend uses single global `state` object
-- No framework — vanilla JavaScript only
-- SSE for real-time updates with 1-second polling fallback
-- 500ms debounce for auto-save
-
-## Documentation Rules
-
-- Default location: `/docs` under appropriate category
-- Before creating new docs: Check for existing semantically-equivalent categories
-- Reuse existing directories; do not create duplicates
-- No new loose `.md` files in project root
-- Only `README.md` and `CLAUDE.md` allowed in root
-- All other documentation goes in `/docs`
 
 ## Verification
 
-After making changes:
-- Run relevant tests if available
+- After changes: Run relevant tests if available
 - For documentation: Check links, paths, and consistency
 - If no automated tests: Manual verification required
 - Explicitly state verification status (verified/not verified)
