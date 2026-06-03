@@ -89,13 +89,22 @@ async function executeBuild(buildId, res) {
     }
 
     if (result.success && result.apkPath) {
-      const apkInfo = apkService.copyApk(
-        result.apkPath,
-        build.projectName,
-        build.moduleName,
-        build.variant,
-        build.versionName
-      );
+      let apkInfo;
+      if (project.type === 'flutter') {
+        const appName = flutterBuildService.getAppName(project.path);
+        const flutterFilename = flutterBuildService.generateFlutterFilename(
+          appName, build.env, build.versionName, build.versionCode, build.buildType
+        );
+        apkInfo = apkService.copyApkWithFilename(result.apkPath, flutterFilename);
+      } else {
+        apkInfo = apkService.copyApk(
+          result.apkPath,
+          build.projectName,
+          build.moduleName,
+          build.variant,
+          build.versionName
+        );
+      }
 
       buildQueue.completeBuild(buildId, apkInfo.url);
       if (res && !res.writableEnded) {
