@@ -640,6 +640,9 @@ function runBuild(projectPath, branch, moduleName, variant, versionCode, version
       // Add JVM args for compatibility with annotation processors (e.g. ButterKnife)
       // that access internal JDK APIs (jdk.compiler) which are encapsulated in JDK 17+
       const gradleArgs = [task, '--no-daemon'];
+      // Skip lintVitalAnalyze to prevent Windows file-lock issues on build servers
+      // (antivirus or background processes may lock lint-cache jar files)
+      gradleArgs.push('-x', `lintVitalAnalyze${variantCap}`);
       if (useCache === false) {
         gradleArgs.push('--refresh-dependencies');
       }
