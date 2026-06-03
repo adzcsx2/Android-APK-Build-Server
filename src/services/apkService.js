@@ -77,9 +77,30 @@ function deleteApk(filename) {
   return false;
 }
 
+/**
+ * Copy APK to output directory with a pre-generated filename
+ * @returns {{ filename, path, url }} — same shape as copyApk()
+ */
+function copyApkWithFilename(sourcePath, filename) {
+  if (!fs.existsSync(sourcePath)) {
+    throw new Error(`APK not found: ${sourcePath}`);
+  }
+
+  const destPath = path.join(apkDir, filename);
+
+  fs.copyFileSync(sourcePath, destPath);
+
+  return {
+    filename,
+    path: destPath,
+    url: `${config.server.basePath}/apk/${filename}`
+  };
+}
+
 module.exports = {
   generateFilename,
   copyApk,
+  copyApkWithFilename,
   listApks,
   deleteApk
 };

@@ -255,6 +255,9 @@ function runBuild(projectPath, branch, flavor, buildType, env, versionCode, vers
     const logs = [];
 
     try {
+      // Initialize cleanup as no-op (will be replaced after gradle.properties is modified)
+      let restoreGradleProps = () => {};
+
       // Step 1: Git sync
       onLog('[BUILD] ========================================');
       onLog('[BUILD] Starting build process...');
@@ -314,6 +317,31 @@ function runBuild(projectPath, branch, flavor, buildType, env, versionCode, vers
         buildEnv.ANDROID_SDK_ROOT = config.androidSdk;
       }
 
+      // Step 4.2: Temporarily disable Android lint to prevent Windows file-lock issues
+      // (antivirus or background processes may lock lint-cache jar files during Flutter's internal Gradle build)
+      const gradlePropsPath = path.join(projectPath, 'android', 'gradle.properties');
+      let origGradleProps = null;
+      try {
+        if (fs.existsSync(gradlePropsPath)) {
+          origGradleProps = fs.readFileSync(gradlePropsPath, 'utf8');
+        }
+        fs.writeFileSync(gradlePropsPath, (origGradleProps || '') + '\nandroid.enableLint=false\n', 'utf8');
+      } catch (e) {
+        onLog(`[BUILD] Warning: Cannot update gradle.properties: ${e.message}`);
+      }
+
+      restoreGradleProps = () => {
+        try {
+          if (origGradleProps !== null) {
+            fs.writeFileSync(gradlePropsPath, origGradleProps, 'utf8');
+          } else if (fs.existsSync(gradlePropsPath)) {
+            fs.unlinkSync(gradlePropsPath);
+          }
+        } catch (_) {
+          // Ignore cleanup errors
+        }
+      };
+
       // Step 4.5: Clean build cache when useCache is false
       const isWindows = process.platform === 'win32';
       const flutterCmd = config.flutterSdk
@@ -329,6 +357,7 @@ function runBuild(projectPath, branch, flavor, buildType, env, versionCode, vers
 
         if (isCancelled && isCancelled()) {
           onLog('[BUILD] Build cancelled after clean');
+          restoreGradleProps();
           return reject(new Error('Build cancelled'));
         }
 
@@ -348,6 +377,7 @@ function runBuild(projectPath, branch, flavor, buildType, env, versionCode, vers
 
       if (isCancelled && isCancelled()) {
         onLog('[BUILD] Build cancelled after pub get');
+        restoreGradleProps();
         return reject(new Error('Build cancelled'));
       }
 
@@ -404,6 +434,7 @@ function runBuild(projectPath, branch, flavor, buildType, env, versionCode, vers
 
       if (isCancelled && isCancelled()) {
         onLog('[BUILD] Build cancelled after i18n generation');
+        restoreGradleProps();
         return reject(new Error('Build cancelled'));
       }
 
@@ -455,6 +486,7 @@ function runBuild(projectPath, branch, flavor, buildType, env, versionCode, vers
       });
 
       proc.on('close', (code) => {
+        restoreGradleProps();
         if (code === null) {
           logs.push('[WARN] Build cancelled');
           reject(new Error('Build cancelled'));
@@ -503,11 +535,13 @@ function runBuild(projectPath, branch, flavor, buildType, env, versionCode, vers
       });
 
       proc.on('error', (err) => {
+        restoreGradleProps();
         logs.push(`[ERROR] ${err.message}`);
         reject(err);
       });
 
     } catch (error) {
+      restoreGradleProps();
       onLog(`[BUILD] Build failed: ${error.message}`);
       reject(error);
     }
@@ -718,10 +752,54 @@ function spawnAsync(cmd, args, cwd, env, onLog) {
   });
 }
 
+/**
+ * Get app name from pubspec.yaml or fall back to directory name
+ */
+function getAppName(projectPath) {
+  const pubspecPath = path.join(projectPath, 'pubspec.yaml');
+  if (!fs.existsSync(pubspecPath)) {
+    return path.basename(projectPath);
+  }
+  try {
+    const content = fs.readFileSync(pubspecPath, 'utf8');
+    const nameMatch = content.match(/^name:\s*(.+)$/m);
+    if (!nameMatch) {
+      return path.basename(projectPath);
+    }
+    return nameMatch[1].trim();
+  } catch {
+    return path.basename(projectPath);
+  }
+}
+
+/**
+ * Generate Flutter APK filename in unified format:
+ *   {appName}_{env}_v{versionName}_{versionCode}_{buildType}_{yyyyMMddHHmm}.apk
+ */
+function generateFlutterFilename(appName, env, versionName, versionCode, buildType) {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const MM = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  const HH = String(now.getHours()).padStart(2, '0');
+  const mm = String(now.getMinutes()).padStart(2, '0');
+  const timestamp = `${yyyy}${MM}${dd}${HH}${mm}`;
+
+  const safeAppName = String(appName || '').replace(/[^a-zA-Z0-9]/g, '');
+  const safeEnv = (env && /^[\w-]+$/.test(env)) ? env : 'unknown';
+  const safeVersionName = String(versionName || '').replace(/[^a-zA-Z0-9.]/g, '_');
+  const safeVersionCode = String(versionCode || 0).replace(/[^a-zA-Z0-9]/g, '');
+  const safeBuildType = (buildType && /^(debug|release)$/i.test(buildType)) ? buildType.toLowerCase() : 'release';
+
+  return `${safeAppName}_${safeEnv}_v${safeVersionName}_${safeVersionCode}_${safeBuildType}_${timestamp}.apk`;
+}
+
 module.exports = {
   getModules,
   getVariants,
   getVersion,
   updateVersion,
   runBuild,
+  getAppName,
+  generateFlutterFilename,
 };
